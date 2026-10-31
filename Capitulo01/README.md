@@ -318,7 +318,7 @@ public struct Place: Identifiable, Equatable, Sendable {
 ```swift
 import Foundation
 
-public protocol PlacesRepositoryProtocol {
+public protocol PlacesRepositoryProtocol: Sendable {
     func fetchPlaces() async throws -> [Place]
 }
 ```
@@ -328,7 +328,7 @@ public protocol PlacesRepositoryProtocol {
 ```swift
 import Foundation
 
-public protocol PlacesServiceProtocol {
+public protocol PlacesServiceProtocol: Sendable {
     func fetchPlaces() async throws -> [Place]
 }
 ```
@@ -537,6 +537,7 @@ public enum CampusTheme {
         alpha: 1.0
     )
 
+    @MainActor
     public static func applyNavigationAppearance() {
         let appearance = UINavigationBarAppearance()
         appearance.configureWithOpaqueBackground()
@@ -626,11 +627,11 @@ Si Xcode no muestra el error `No such module`, la integración es correcta. Elim
 
 ### Paso 7. Configurar el punto de composición y la inyección de dependencias
 
-**Objetivo:** crear un `DependencyContainer` que construya las implementaciones concretas y las entregue como abstracciones.
+**Objetivo:** crear un `AppDependencyContainer` que construya las implementaciones concretas y las entregue como abstracciones.
 
 **Instrucciones:**
 
-1. En el grupo `App`, crea `DependencyContainer.swift`.
+1. En el grupo `App`, crea `AppDependencyContainer.swift`.
 2. Asegúrate de que el archivo pertenezca únicamente al target `CampusExplorer`.
 3. Añade el siguiente código:
 
@@ -639,7 +640,8 @@ import CampusDomain
 import CampusNetworking
 import Foundation
 
-final class DependencyContainer {
+@MainActor
+final class AppDependencyContainer {
     func makePlacesRepository() -> any PlacesRepositoryProtocol {
         let service = StaticPlacesService()
         return PlacesRepository(service: service)
@@ -655,7 +657,7 @@ final class DependencyContainer {
                    App
    ```
 
-5. No crees `StaticPlacesService` dentro de un ViewModel ni de un View Controller. Su construcción debe permanecer centralizada en `DependencyContainer`.
+5. No crees `StaticPlacesService` dentro de un ViewModel ni de un View Controller. Su construcción debe permanecer centralizada en `AppDependencyContainer`.
 
 **Resultado esperado:**
 
@@ -663,7 +665,7 @@ Existe un punto de composición único que conoce implementaciones concretas de 
 
 **Verificación:**
 
-Comprueba que `DependencyContainer` es el único archivo de la app que contiene:
+Comprueba que `AppDependencyContainer` es el único archivo de la app que contiene:
 
 ```swift
 StaticPlacesService()
@@ -676,7 +678,7 @@ cd ~/Developer/CampusExplorer
 grep -R "StaticPlacesService()" --exclude-dir=Packages .
 ```
 
-La coincidencia relevante debe estar en `DependencyContainer.swift`.
+La coincidencia relevante debe estar en `AppDependencyContainer.swift`.
 
 ---
 
@@ -692,15 +694,16 @@ La coincidencia relevante debe estar en `DependencyContainer.swift`.
 import CampusDesignSystem
 import UIKit
 
+@MainActor
 final class AppCoordinator {
     private let window: UIWindow
-    private let dependencyContainer: DependencyContainer
+    private let dependencyContainer: AppDependencyContainer
     private let navigationController: UINavigationController
     private var placesCoordinator: PlacesCoordinator?
 
     init(
         window: UIWindow,
-        dependencyContainer: DependencyContainer
+        dependencyContainer: AppDependencyContainer
     ) {
         self.window = window
         self.dependencyContainer = dependencyContainer
@@ -730,13 +733,14 @@ final class AppCoordinator {
 import CampusDomain
 import UIKit
 
+@MainActor
 final class PlacesCoordinator {
     private let navigationController: UINavigationController
-    private let dependencyContainer: DependencyContainer
+    private let dependencyContainer: AppDependencyContainer
 
     init(
         navigationController: UINavigationController,
-        dependencyContainer: DependencyContainer
+        dependencyContainer: AppDependencyContainer
     ) {
         self.navigationController = navigationController
         self.dependencyContainer = dependencyContainer
@@ -785,7 +789,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
 
         let window = UIWindow(windowScene: windowScene)
-        let dependencyContainer = DependencyContainer()
+        let dependencyContainer = AppDependencyContainer()
 
         let coordinator = AppCoordinator(
             window: window,
@@ -1394,7 +1398,7 @@ CampusExplorer/
 ├── CampusExplorer/
 │   ├── App/
 │   │   ├── AppCoordinator.swift
-│   │   ├── DependencyContainer.swift
+│   │   ├── AppDependencyContainer.swift
 │   │   └── PlacesCoordinator.swift
 │   ├── Presentation/
 │   │   ├── Places/
@@ -1526,9 +1530,46 @@ En esta práctica creaste la base modular de **CampusExplorer**:
 - Separaste la interfaz UIKit de la lógica de presentación en ViewModels.
 - Definiste protocolos de dominio para desacoplar presentación, repositorios y servicios.
 - Construiste paquetes locales con Swift Package Manager.
-- Centralizaste la construcción de dependencias en `DependencyContainer`.
+- Centralizaste la construcción de dependencias en `AppDependencyContainer`.
 - Delegaste la navegación en `AppCoordinator` y `PlacesCoordinator`.
 - Añadiste una prueba unitaria que valida la lógica del ViewModel de forma aislada.
 - Registraste la línea base en el repositorio Git de la rama `main`.
 
 Esta estructura será el punto de partida para incorporar geolocalización, mapas, optimización de rendimiento, pruebas de snapshots, integración continua y módulos VIPER en las siguientes prácticas.
+
+---
+
+## Anexo. Correcciones y continuidad con el curso
+
+### A.1 Resumen de las correcciones de esta versión
+
+| Corrección | Motivo | Dónde |
+|---|---|---|
+| El contenedor se llama `AppDependencyContainer` en lugar de `DependencyContainer` | Es el nombre que usan los laboratorios 2, 5 y 6; así no cambia de nombre entre prácticas | Pasos 7 y 8 |
+| `PlacesRepositoryProtocol` y `PlacesServiceProtocol` heredan de `Sendable` | El ViewModel `@MainActor` llama a `fetchPlaces()` con `await`; en Swift 6 el repositorio debe poder cruzar entre contextos de concurrencia | Paso 3 |
+| `AppCoordinator`, `PlacesCoordinator` y `AppDependencyContainer` son `@MainActor` | Crean controladores de vista y un ViewModel `@MainActor`; en Swift 6 eso solo puede hacerse en el hilo principal | Pasos 7 y 8 |
+| `CampusTheme.applyNavigationAppearance()` es `@MainActor` | `UINavigationBar.appearance()` es una API de interfaz; los paquetes con `swift-tools-version: 6.1` compilan en modo Swift 6 | Paso 5 |
+
+### A.2 Cómo evoluciona el proyecto en las prácticas siguientes
+
+Cada práctica adapta el modelo y la fuente de datos al tema del capítulo. Estos cambios son intencionales; la tabla ayuda a ubicarlos.
+
+| Práctica | Modelo de lugar | Fuente de datos | Composición |
+|---|---|---|---|
+| 1 (esta) | `Place` con `summary` y `building` | `StaticPlacesService` (`async throws`) | `AppDependencyContainer.makePlacesRepository()` |
+| 2 | `Place` con `address`, `city` y `region` | `OpenBreweryPlacesService` con Combine | `AppDependencyContainer.makePlacesViewModel()` |
+| 3 | `CampusPlace` con coordenadas, categoría e imagen | `CampusExplorerRepository` (`async`) y actor `CampusCache` | Caso de uso `LoadCampusExplorerUseCase` |
+| 4 | `CampusMapPlace` para el mapa | `CampusLocationKit` (`LocationManaging`) | `PlacesCoordinator.showMap` |
+| 5 | `Place` con `address` y coordenadas | Adaptadores Combine sobre los laboratorios 3 y 4 | `AppDependencyContainer.makePlacesViewModel()` |
+| 6 | `CampusTask` (módulo independiente) | `TaskRepositoryProtocol` | `AppDependencyContainer.taskRepository` |
+
+Lo que se mantiene en todo el curso: los paquetes `CampusDomain`, `CampusNetworking` y `CampusDesignSystem`, el `AppDependencyContainer` como único punto de composición y el `AppCoordinator` como inicio de la navegación.
+
+### A.3 Verificación antes de publicar
+
+| Verificar | Cómo |
+|---|---|
+| No queda ningún `DependencyContainer` sin el prefijo `App` | Buscar `DependencyContainer(` y `: DependencyContainer` en el proyecto |
+| Los paquetes compilan en modo Swift 6 | `swift build` en cada paquete o compilación desde Xcode sin errores de aislamiento |
+| La app compila y navega lista → detalle | Paso 12 |
+| La prueba del ViewModel pasa | `** TEST SUCCEEDED **` en el paso 11 |

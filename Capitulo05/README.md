@@ -276,6 +276,7 @@ struct Place: Equatable, Identifiable {
 ```
 
 7. Asegúrate de que los mensajes de error usados por el ViewModel sean estables y aptos para pruebas. Evita comparar directamente errores técnicos de `URLSession`.
+8. Si tu proyecto viene de los laboratorios 3 y 4, no reescribas el repositorio ni la ubicación: implementa este contrato sobre el código existente con los adaptadores del **Anexo A.2 a A.4**. Las pruebas de los pasos 4 a 7 no usan los adaptadores; usan dobles de prueba.
 
 **Salida esperada:**
 
@@ -883,7 +884,7 @@ final class PlacesListViewController: UIViewController {
 ```
 
 3. Expón una forma controlada de actualizar la interfaz según el estado. Por ejemplo, mantén la vinculación Combine de producción y usa un ViewModel construido con stubs en las pruebas.
-4. Crea una utilidad de pruebas para generar el controlador. Ajusta el nombre de tu controlador real si se denomina de otra forma:
+4. Crea una utilidad de pruebas para generar el controlador. Como `PlacesListViewController` guarda su ViewModel como `private`, la fábrica `makeScreen` devuelve la pantalla **y** el ViewModel por separado; así las pruebas inician la carga sin acceder a una propiedad privada. Ajusta el nombre de tu controlador real si se denomina de otra forma:
 
 ```swift
 import Combine
@@ -904,9 +905,9 @@ final class PlacesListSnapshotTests: XCTestCase {
         isRecording = false
     }
 
-    private func makeViewController(
+    private func makeScreen(
         repositoryResult: Result<[Place], Error>
-    ) -> PlacesListViewController {
+    ) -> (screen: PlacesListViewController, viewModel: PlacesViewModel) {
         let repository = PlacesRepositoryStub()
         repository.result = repositoryResult
 
@@ -918,9 +919,35 @@ final class PlacesListSnapshotTests: XCTestCase {
             locationProvider: locationProvider
         )
 
-        return PlacesListViewController(
+        let screen = PlacesListViewController(
             viewModel: viewModel,
             shouldLoadOnAppear: false
+        )
+
+        return (screen, viewModel)
+    }
+
+    private func snapshotAfterLoading(
+        _ result: Result<[Place], Error>,
+        file: StaticString = #filePath,
+        testName: String = #function,
+        line: UInt = #line
+    ) {
+        let (screen, viewModel) = makeScreen(repositoryResult: result)
+
+        prepareForSnapshot(screen)
+        viewModel.loadPlaces()
+
+        let rendered = expectation(description: "La pantalla recibe el estado final.")
+        DispatchQueue.main.async { rendered.fulfill() }
+        wait(for: [rendered], timeout: 1.0)
+
+        assertSnapshot(
+            of: screen,
+            as: .image(on: .iPhone13),
+            file: file,
+            testName: testName,
+            line: line
         )
     }
 
@@ -938,9 +965,7 @@ final class PlacesListSnapshotTests: XCTestCase {
 }
 ```
 
-5. Si los dobles están definidos únicamente en `CampusExplorerTests`, no serán visibles desde `CampusExplorerSnapshotTests`. Puedes:
-   - Duplicar los dobles mínimos en el target de snapshots, o
-   - Crear un grupo `TestSupport` y marcar sus archivos como miembros de ambos targets.
+5. Los dobles del paso 4 están en `CampusExplorerTests` y no son visibles desde `CampusExplorerSnapshotTests`. Selecciona `CampusExplorerTests/Support/PlacesTestDoubles.swift` y, en **Target Membership**, marca también `CampusExplorerSnapshotTests`. Compila el target de snapshots y confirma que no aparece `Cannot find 'PlacesRepositoryStub' in scope`.
 
 6. Implementa el snapshot del estado cargando usando `ControlledPlacesRepository`. Como el estado debe permanecer en carga, no envíes ningún valor al `subject`:
 
@@ -988,105 +1013,33 @@ func testPlacesList_loading() {
 }
 ```
 
-7. Implementa el snapshot con resultados:
+7. Implementa los snapshots con resultados, vacío y error usando `snapshotAfterLoading`:
 
 ```swift
 func testPlacesList_loaded() {
-    let places = [
+    snapshotAfterLoading(.success([
         makePlace(),
         makePlace(
             id: "cafeteria",
             name: "Cafetería Norte",
             address: "Plaza de Ingeniería, 2"
         )
-    ]
-
-    let viewController = makeViewController(
-        repositoryResult: .success(places)
-    )
-
-    prepareForSnapshot(viewController)
-
-    let expectation = expectation(
-        description: "La pantalla muestra los lugares cargados."
-    )
-
-    viewController.viewModel.loadPlaces()
-
-    DispatchQueue.main.async {
-        expectation.fulfill()
-    }
-
-    wait(for: [expectation], timeout: 1.0)
-
-    assertSnapshot(
-        matching: viewController,
-        as: .image(on: .iPhone13)
-    )
+    ]))
 }
-```
 
-8. Si `viewModel` es privado en el controlador, expón un método de carga para pruebas o inyecta un closure de arranque. No fuerces el acceso a propiedades privadas desde el target de pruebas.
-9. Implementa el snapshot vacío:
-
-```swift
 func testPlacesList_empty() {
-    let viewController = makeViewController(
-        repositoryResult: .success([])
-    )
-
-    prepareForSnapshot(viewController)
-
-    viewController.viewModel.loadPlaces()
-
-    let expectation = expectation(
-        description: "La pantalla muestra el estado vacío."
-    )
-
-    DispatchQueue.main.async {
-        expectation.fulfill()
-    }
-
-    wait(for: [expectation], timeout: 1.0)
-
-    assertSnapshot(
-        matching: viewController,
-        as: .image(on: .iPhone13)
-    )
+    snapshotAfterLoading(.success([]))
 }
-```
 
-10. Implementa el snapshot de error:
-
-```swift
 func testPlacesList_error() {
-    let viewController = makeViewController(
-        repositoryResult: .failure(PlacesTestError.networkUnavailable)
-    )
-
-    prepareForSnapshot(viewController)
-
-    viewController.viewModel.loadPlaces()
-
-    let expectation = expectation(
-        description: "La pantalla muestra el estado de error."
-    )
-
-    DispatchQueue.main.async {
-        expectation.fulfill()
-    }
-
-    wait(for: [expectation], timeout: 1.0)
-
-    assertSnapshot(
-        matching: viewController,
-        as: .image(on: .iPhone13)
-    )
+    snapshotAfterLoading(.failure(PlacesTestError.networkUnavailable))
 }
 ```
 
-11. En una implementación de producción, es preferible que el controlador publique una API interna para iniciar la carga o que el ViewModel se inyecte desde el Coordinator. Si necesitas acceder al ViewModel desde un test, no conviertas una propiedad `private` en pública solo para probarla; usa una API de intención como `loadPlacesForTesting()` o controla la carga durante la inicialización.
-12. Antes de grabar, revisa que la interfaz no dependa de:
+   `testName: #function` hace que cada prueba conserve su propio archivo de referencia aunque todas usen la misma función auxiliar. `DispatchQueue.main.async` espera una vuelta del hilo principal para que el estado publicado con `receive(on:)` llegue a la pantalla antes de tomar la imagen.
+
+8. No conviertas la propiedad `private` del ViewModel en pública solo para probarla. En producción, el Coordinator crea el ViewModel y lo inyecta en el controlador; en las pruebas, `makeScreen` hace lo mismo y conserva una referencia propia.
+9. Antes de grabar, revisa que la interfaz no dependa de:
     - La fecha u hora actuales.
     - Posición GPS real.
     - Animaciones activas.
@@ -1298,6 +1251,9 @@ jobs:
           xcodebuild -version
           xcrun simctl list devices available
 
+      - name: Install xcpretty
+        run: gem install xcpretty --no-document
+
       - name: Resolve Swift packages
         run: |
           xcodebuild -resolvePackageDependencies \
@@ -1317,18 +1273,7 @@ jobs:
             | xcpretty
 ```
 
-3. Si `xcpretty` no está instalado en el runner, elimina `| xcpretty` para evitar una dependencia adicional. El bloque final alternativo es:
-
-```yaml
-      - name: Build and run tests
-        run: |
-          xcodebuild test \
-            -project CampusExplorer.xcodeproj \
-            -scheme CampusExplorer \
-            -destination 'platform=iOS Simulator,name=iPhone 16,OS=18.5' \
-            -derivedDataPath build/DerivedData \
-            CODE_SIGNING_ALLOWED=NO
-```
+3. El paso `Install xcpretty` instala el formateador de salida, que no viene garantizado en el runner. `set -o pipefail` es obligatorio: sin él, un fallo de `xcodebuild` quedaría oculto detrás de `xcpretty` y el job aparecería en verde. Si prefieres la salida completa de `xcodebuild`, elimina el paso `Install xcpretty` y la línea `| xcpretty` (junto con la barra invertida de la línea anterior).
 
 4. Verifica la sintaxis YAML, especialmente la indentación de dos espacios.
 5. Confirma que el workflow referencia:
@@ -1604,3 +1549,268 @@ También incorporaste snapshots que protegen la representación visual de los es
 - [Swift Snapshot Testing](https://github.com/pointfreeco/swift-snapshot-testing)
 - [GitHub Actions para iOS](https://docs.github.com/actions)
 - [Documentación de xcodebuild](https://developer.apple.com/library/archive/technotes/tn2339/_index.html)
+
+---
+
+## Anexo. Continuidad con las prácticas anteriores
+
+Este anexo conecta la práctica con el código de los laboratorios 3 y 4 sin cambiar su contrato. `PlacesViewModel`, `PlacesRepositoryProtocol`, `LocationProviding` y las pruebas de los pasos 4 a 7 se conservan tal como están.
+
+### A.1 Por qué cambia el contrato respecto a las prácticas anteriores
+
+| Elemento | Laboratorios 2 a 4 | Laboratorio 5 | Motivo |
+|---|---|---|---|
+| Fuente de lugares | `CampusExplorerRepository` (`async throws`, laboratorio 3) | `PlacesRepositoryProtocol` (`AnyPublisher`) | El capítulo prueba flujos de Combine |
+| Ubicación | `LocationManaging` con delegado (laboratorio 4) | `LocationProviding` (`AnyPublisher`) | Una sola cadena: ubicación → lugares → estado |
+| Modelo | `CampusPlace` (UUID, `categoryID`, coordenadas) | `Place` (`String`, `address`, coordenadas) | Modelo de presentación de la lista |
+| Método | `load()` | `loadPlaces()` | Nombre del contrato comprobable |
+
+No se reemplaza el código anterior: se agregan **dos adaptadores** (A.2 y A.3) que implementan el contrato del laboratorio 5 sobre los componentes que ya existen.
+
+### A.2 Adaptador de ubicación sobre `CampusLocationKit`
+
+Crea `CampusExplorer/Places/Adapters/CampusLocationProvider.swift`:
+
+```swift
+import Combine
+import CoreLocation
+import CampusLocationKit
+
+enum LocationProviderError: LocalizedError {
+    case notAuthorized
+
+    var errorDescription: String? {
+        "No fue posible obtener la ubicación."
+    }
+}
+
+@MainActor
+final class CampusLocationProvider: @preconcurrency LocationProviding {
+    private let locationManager: any LocationManaging
+    private var pendingRequest: PassthroughSubject<CLLocationCoordinate2D, Error>?
+
+    init(locationManager: any LocationManaging) {
+        self.locationManager = locationManager
+        locationManager.delegate = self
+    }
+
+    func requestCurrentLocation() -> AnyPublisher<CLLocationCoordinate2D, Error> {
+        if let coordinate = locationManager.lastKnownCoordinate {
+            return Just(coordinate.clLocationCoordinate2D)
+                .setFailureType(to: Error.self)
+                .eraseToAnyPublisher()
+        }
+
+        switch locationManager.authorizationStatus {
+        case .denied, .restricted:
+            return Fail(error: LocationProviderError.notAuthorized)
+                .eraseToAnyPublisher()
+
+        case .notDetermined:
+            locationManager.requestWhenInUseAuthorization()
+
+        case .authorizedWhenInUse:
+            locationManager.startUpdatingLocation()
+        }
+
+        let request = PassthroughSubject<CLLocationCoordinate2D, Error>()
+        pendingRequest = request
+        return request.first().eraseToAnyPublisher()
+    }
+
+    private func finish(with result: Result<CLLocationCoordinate2D, Error>) {
+        guard let request = pendingRequest else { return }
+        pendingRequest = nil
+        locationManager.stopUpdatingLocation()
+
+        switch result {
+        case .success(let coordinate):
+            request.send(coordinate)
+            request.send(completion: .finished)
+        case .failure(let error):
+            request.send(completion: .failure(error))
+        }
+    }
+}
+
+extension CampusLocationProvider: CampusLocationManagerDelegate {
+    func campusLocationManager(
+        _ manager: any LocationManaging,
+        didChange authorizationStatus: LocationAuthorizationStatus
+    ) {
+        switch authorizationStatus {
+        case .authorizedWhenInUse:
+            manager.startUpdatingLocation()
+        case .denied, .restricted:
+            finish(with: .failure(LocationProviderError.notAuthorized))
+        case .notDetermined:
+            break
+        }
+    }
+
+    func campusLocationManager(
+        _ manager: any LocationManaging,
+        didUpdate coordinate: LocationCoordinate
+    ) {
+        finish(with: .success(coordinate.clLocationCoordinate2D))
+    }
+
+    func campusLocationManager(
+        _ manager: any LocationManaging,
+        didFailWith error: Error
+    ) {
+        finish(with: .failure(error))
+    }
+}
+```
+
+Notas:
+
+- `@preconcurrency LocationProviding` permite que una clase `@MainActor` cumpla un protocolo no aislado en Swift 6.1. Sin este atributo el compilador muestra un error de aislamiento.
+- `LocationManaging` admite **un solo delegado**. El mapa del laboratorio 4 ya usa su propio `LocationManager`, así que este adaptador recibe **otra instancia** (ver A.4).
+
+### A.3 Adaptador del repositorio sobre el laboratorio 3
+
+Crea `CampusExplorer/Places/Adapters/CampusPlacesRepository.swift`:
+
+```swift
+import Combine
+import CoreLocation
+import CampusDomain
+
+extension Place {
+    init(campusPlace: CampusPlace) {
+        self.init(
+            id: campusPlace.id.uuidString,
+            name: campusPlace.name,
+            address: "",
+            latitude: campusPlace.latitude,
+            longitude: campusPlace.longitude
+        )
+    }
+}
+
+extension Array where Element == Place {
+    func sorted(byDistanceTo coordinate: CLLocationCoordinate2D) -> [Place] {
+        let origin = CLLocation(
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude
+        )
+
+        return sorted {
+            CLLocation(latitude: $0.latitude, longitude: $0.longitude).distance(from: origin) <
+            CLLocation(latitude: $1.latitude, longitude: $1.longitude).distance(from: origin)
+        }
+    }
+}
+
+final class CampusPlacesRepository: PlacesRepositoryProtocol {
+    private let repository: any CampusExplorerRepository
+
+    init(repository: any CampusExplorerRepository) {
+        self.repository = repository
+    }
+
+    func fetchPlaces(
+        near coordinate: CLLocationCoordinate2D
+    ) -> AnyPublisher<[Place], Error> {
+        let repository = self.repository
+        let latitude = coordinate.latitude
+        let longitude = coordinate.longitude
+
+        return Deferred {
+            Future<[Place], Error> { promise in
+                nonisolated(unsafe) let promise = promise
+
+                Task {
+                    do {
+                        let origin = CLLocationCoordinate2D(
+                            latitude: latitude,
+                            longitude: longitude
+                        )
+                        let places = try await repository.fetchPlaces()
+                            .map(Place.init(campusPlace:))
+                            .sorted(byDistanceTo: origin)
+                        promise(.success(places))
+                    } catch {
+                        promise(.failure(error))
+                    }
+                }
+            }
+        }
+        .eraseToAnyPublisher()
+    }
+}
+```
+
+Notas:
+
+- `Deferred` retrasa la solicitud hasta que alguien se suscribe, igual que `dataTaskPublisher`. Sin `Deferred`, el `Future` empezaría a trabajar al crearse.
+- `nonisolated(unsafe)` es necesario porque el `promise` de `Future` no es `Sendable`. Es seguro aquí porque se invoca una sola vez.
+- `CampusPlace` no tiene dirección, por eso `address` queda vacío. Si tu API la devuelve, agrégala al modelo del laboratorio 3.
+
+### A.4 Conectar los adaptadores en el contenedor
+
+En `AppDependencyContainer`:
+
+```swift
+import CampusLocationKit
+
+@MainActor
+final class AppDependencyContainer {
+    private lazy var campusExplorerRepository: any CampusExplorerRepository =
+        CampusAPIRepository(baseURL: URL(string: "https://api.campus.edu")!)
+
+    func makePlacesViewModel() -> PlacesViewModel {
+        PlacesViewModel(
+            repository: CampusPlacesRepository(
+                repository: campusExplorerRepository
+            ),
+            locationProvider: CampusLocationProvider(
+                locationManager: LocationManager()
+            )
+        )
+    }
+}
+```
+
+- Sustituye `https://api.campus.edu` por el `baseURL` que usaste en el laboratorio 3.
+- El contenedor es `@MainActor` porque `LocationManager` y `CampusLocationProvider` lo son.
+- Las pruebas **no** usan el contenedor ni los adaptadores; siguen usando `PlacesRepositoryStub` y `LocationProviderStub` del paso 4.
+
+### A.5 Notas sobre snapshots
+
+- **`.image(on: .iPhone13)`** define el **tamaño y la escala de la imagen** (390 × 844 pt, @3x), no el simulador. Las pruebas se ejecutan en iPhone 16 y es correcto. Lo importante es que la Mac y CI usen **el mismo simulador y el mismo runtime** (iPhone 16, iOS 18.5); si no, cambian las fuentes y el suavizado y la comparación falla.
+- **`isRecording`** funciona en swift-snapshot-testing 1.17.0, pero puede mostrar un aviso de obsolescencia. La forma recomendada desde la versión 1.17 es:
+
+  ```swift
+  withSnapshotTesting(record: .all) {
+      assertSnapshot(of: screen, as: .image(on: .iPhone13))
+  }
+  ```
+
+  Para esta práctica se mantiene `isRecording = true` / `false` (paso 8). Nunca confirmes el código con `isRecording = true`.
+- Graba las referencias en el mismo simulador que usará CI y súbelas en el mismo commit que las pruebas.
+
+### A.6 Verificación antes de publicar
+
+Confirma estos puntos compilando una vez el proyecto completo:
+
+| Verificar | Origen | Si no coincide |
+|---|---|---|
+| El contenedor se llama `AppDependencyContainer` | Laboratorio 2, paso 7 | Usa el nombre de tu proyecto (`DependencyContainer` en el laboratorio 1) |
+| `CampusAPIRepository(session:baseURL:)` existe | Laboratorio 3, paso 3 | Si conservaste la versión con `CampusAPIService`, crea el repositorio con ese servicio |
+| `LocationManaging.lastKnownCoordinate` existe | Laboratorio 4, paso 2 | Elimina el atajo inicial de `requestCurrentLocation()`; el resto funciona igual |
+| `xcodebuild test` termina en `** TEST SUCCEEDED **` con 5 pruebas unitarias y 4 snapshots | Pasos 5 a 9 | Revisa los puntos 4 y 5 del paso 7 |
+| El job de GitHub Actions termina en verde en el pull request | Pasos 10 y 11 | Revisa el problema 2 |
+
+### A.7 Resumen de los ajustes respecto a la versión anterior de la guía
+
+| Ajuste | Dónde |
+|---|---|
+| Nota de continuidad con los laboratorios 3 y 4 | Paso 2, punto 8 |
+| Adaptadores hacia los laboratorios 3 y 4 | A.1 a A.4 |
+| La fábrica `makeScreen` devuelve el ViewModel (antes las pruebas accedían a una propiedad privada y no compilaban) | Paso 7, puntos 4, 7 y 8 |
+| Dobles de prueba compartidos entre targets | Paso 7, punto 5 |
+| Instalación de `xcpretty` y uso de `set -o pipefail` | Paso 10 |
+| Notas sobre `.iPhone13` e `isRecording` | A.5 |

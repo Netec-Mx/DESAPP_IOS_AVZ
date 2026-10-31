@@ -112,10 +112,12 @@ Al finalizar la práctica podrás:
 
 2. Navega a la pantalla que carga lugares del campus, categorías y miniaturas o recursos visuales.
 
+   > **Si vienes del laboratorio 2:** la pantalla de Exploración todavía no existe; esta práctica la crea (**Anexo A.3**). Para la línea base, mide la pantalla de búsqueda del laboratorio 2 y anota sus funciones costosas. Si prefieres una comparación directa, construye primero la pantalla del Anexo A.3 con la variante de línea base que allí se indica y mídela antes de aplicar los pasos 4 a 6.
+
 3. Realiza una interacción repetible:
    - Abre la pantalla de exploración.
    - Espera a que termine la carga.
-   - Cambia de categoría tres veces.
+   - Recorre las secciones de categorías de arriba abajo tres veces (o cambia de categoría tres veces si tu pantalla tiene un selector).
    - Regresa a la lista principal.
    - Repite el flujo dos veces.
 
@@ -313,87 +315,113 @@ El dominio define entidades inmutables y un contrato asíncrono que no depende d
    import Combine
    import Foundation
 
-   public extension Publisher where Failure: Error {
+   public extension Publisher where Output: Sendable, Failure: Error {
+       /// Espera el primer valor del publisher y admite la cancelación de la tarea.
        func firstValue() async throws -> Output {
-           var cancellable: AnyCancellable?
+           let bridge = FirstValueBridge<Output>()
 
            return try await withTaskCancellationHandler {
                try await withCheckedThrowingContinuation { continuation in
-                   var didResume = false
-
-                   cancellable = self
-                       .first()
-                       .sink(
-                           receiveCompletion: { completion in
-                               guard !didResume else { return }
-                               didResume = true
-
-                               switch completion {
-                               case .finished:
-                                   continuation.resume(
-                                       throwing: URLError(.badServerResponse)
-                                   )
-                               case .failure(let error):
-                                   continuation.resume(throwing: error)
-                               }
-
-                               cancellable?.cancel()
-                               cancellable = nil
-                           },
-                           receiveValue: { value in
-                               guard !didResume else { return }
-                               didResume = true
-                               continuation.resume(returning: value)
-                               cancellable?.cancel()
-                               cancellable = nil
-                           }
-                       )
+                   bridge.start(continuation: continuation, publisher: first())
                }
            } onCancel: {
-               cancellable?.cancel()
+               bridge.cancel()
            }
+       }
+   }
+
+   /// Estado compartido entre la tarea, la suscripción de Combine y la cancelación.
+   /// Un `NSLock` protege todas las propiedades; por eso es seguro marcarlo
+   /// `@unchecked Sendable`.
+   final class FirstValueBridge<Output: Sendable>: @unchecked Sendable {
+       private let lock = NSLock()
+       private var continuation: CheckedContinuation<Output, Error>?
+       private var cancellable: AnyCancellable?
+       private var isCancelled = false
+
+       func start<P: Publisher>(
+           continuation: CheckedContinuation<Output, Error>,
+           publisher: P
+       ) where P.Output == Output {
+           lock.lock()
+           guard !isCancelled else {
+               lock.unlock()
+               continuation.resume(throwing: CancellationError())
+               return
+           }
+           self.continuation = continuation
+           lock.unlock()
+
+           let subscription = publisher.sink(
+               receiveCompletion: { completion in
+                   switch completion {
+                   case .finished:
+                       self.finish(.failure(URLError(.badServerResponse)))
+                   case .failure(let error):
+                       self.finish(.failure(error))
+                   }
+               },
+               receiveValue: { value in
+                   self.finish(.success(value))
+               }
+           )
+
+           lock.lock()
+           let alreadyFinished = self.continuation == nil
+           if !alreadyFinished { cancellable = subscription }
+           lock.unlock()
+
+           if alreadyFinished { subscription.cancel() }
+       }
+
+       func cancel() {
+           lock.lock()
+           isCancelled = true
+           lock.unlock()
+           finish(.failure(CancellationError()))
+       }
+
+       private func finish(_ result: Result<Output, Error>) {
+           lock.lock()
+           let continuation = self.continuation
+           let cancellable = self.cancellable
+           self.continuation = nil
+           self.cancellable = nil
+           lock.unlock()
+
+           cancellable?.cancel()
+           continuation?.resume(with: result)
        }
    }
    ```
 
-4. Implementa el protocolo `CampusExplorerRepository` en el repositorio de red existente. El siguiente ejemplo presupone publishers existentes llamados `placesPublisher()`, `categoriesPublisher()` e `imageDataPublisher(url:)`. Sustituye esos nombres por los de tu proyecto.
+   La versión anterior de esta guía capturaba variables `var` en el bloque `onCancel`, que se ejecuta de forma concurrente; Swift 6 lo rechaza. El puente usa un único objeto protegido con un candado y garantiza que la continuación se reanude exactamente una vez, también si la tarea se cancela antes de suscribirse.
+
+4. Aplica el puente al servicio Combine del laboratorio 2. Crea `Packages/CampusNetworking/Sources/CampusNetworking/PlacesSearching+Async.swift`:
 
    ```swift
    import CampusDomain
    import Foundation
 
-   public final class CampusAPIRepository: CampusExplorerRepository, @unchecked Sendable {
-       private let service: CampusAPIService
-
-       public init(service: CampusAPIService) {
-           self.service = service
-       }
-
-       public func fetchPlaces() async throws -> [CampusPlace] {
+   public extension PlacesSearching {
+       /// Versión async de la búsqueda del laboratorio 2.
+       func searchPlacesAsync(query: String) async throws -> [Place] {
            try Task.checkCancellation()
-           return try await service.placesPublisher().firstValue()
-       }
-
-       public func fetchCategories() async throws -> [CampusCategory] {
-           try Task.checkCancellation()
-           return try await service.categoriesPublisher().firstValue()
-       }
-
-       public func fetchImageData(from url: URL) async throws -> Data {
-           try Task.checkCancellation()
-           return try await service.imageDataPublisher(url: url).firstValue()
+           return try await searchPlaces(query: query).firstValue()
        }
    }
    ```
 
-5. **Importante:** si `CampusAPIRepository` contiene estado mutable, no uses `@unchecked Sendable`. En ese caso, aplica una de estas alternativas:
+   Así el código Combine existente se consume con `try await`, sin reescribir `OpenBreweryPlacesService`. Es el mismo patrón que aplicarías a cualquier repositorio que ya devuelva `AnyPublisher`.
+
+5. **Importante:** si un repositorio de red contiene estado mutable, no uses `@unchecked Sendable`. En ese caso, aplica una de estas alternativas:
 
    - Convierte el repositorio en `actor`.
    - Haz inmutable el estado interno.
    - Crea un adaptador `actor` que encapsule el servicio no seguro.
    - Usa directamente `URLSession` con tipos `Sendable`.
 
-6. Una implementación preferible basada en `URLSession` puede seguir esta estructura:
+6. Para la pantalla de Exploración se necesitan lugares con coordenadas, categorías e imágenes, que la API del laboratorio 2 no ofrece. En esta práctica usa el repositorio determinista `SampleCampusExplorerRepository` del **Anexo A.2**. Cuando exista una API del campus, la implementación con `URLSession` seguiría esta estructura:
 
    ```swift
    public struct CampusAPIRepository: CampusExplorerRepository {
@@ -519,7 +547,7 @@ El módulo de acceso a datos expone métodos `async throws` para lugares, catego
 
    ```swift
    import XCTest
-   @testable import CampusDomain
+   import CampusDomain
 
    final class CampusCacheTests: XCTestCase {
        func testStoresImagesConcurrently() async {
@@ -755,7 +783,7 @@ El caso de uso obtiene datos independientes en paralelo, agrupa y ordena lugares
 
 **Instrucciones:**
 
-1. Localiza el ViewModel, Presenter o controlador de presentación de la pantalla de exploración.
+1. Crea `CampusExplorer/Features/Explorer/CampusExplorerViewModel.swift`. Si vienes del laboratorio 2, la pantalla de Exploración aún no existe: su View Controller y su conexión con el coordinator y el contenedor están en el **Anexo A.3**.
 
 2. Si el proyecto utiliza UIKit con VIPER, el Presenter puede estar aislado en `MainActor`. Si utiliza un ViewModel, aplica el mismo criterio.
 
@@ -798,8 +826,11 @@ El caso de uso obtiene datos independientes en paralelo, agrupa y ordena lugares
 
                    try Task.checkCancellation()
 
+                   let thumbnails = await ImageDecoder.thumbnails(from: snapshot.imageDataByURL)
+                   try Task.checkCancellation()
+
                    groups = snapshot.groups
-                   imagesByURL = decodeImages(snapshot.imageDataByURL)
+                   imagesByURL = thumbnails
                } catch is CancellationError {
                    // No se muestra un error al usuario por una cancelación esperada.
                } catch {
@@ -812,19 +843,10 @@ El caso de uso obtiene datos independientes en paralelo, agrupa y ordena lugares
            loadTask?.cancel()
            loadTask = nil
        }
-
-       private func decodeImages(_ dataByURL: [URL: Data]) -> [URL: UIImage] {
-           dataByURL.reduce(into: [:]) { result, element in
-               let (url, data) = element
-               result[url] = UIImage(data: data)
-           }
-       }
    }
    ```
 
-4. Para evitar que la decodificación de imágenes ocurra en `MainActor`, mueve la decodificación a un componente no aislado. Crea una representación visual intermedia si tu arquitectura lo requiere.
-
-   En proyectos UIKit, utiliza un servicio dedicado para decodificar datos antes de actualizar la vista. Un ejemplo simplificado es:
+4. Crea `CampusExplorer/Features/Explorer/ImageDecoder.swift` para decodificar miniaturas fuera del `MainActor`:
 
    ```swift
    import Foundation
@@ -832,7 +854,23 @@ El caso de uso obtiene datos independientes en paralelo, agrupa y ordena lugares
    import UIKit
 
    enum ImageDecoder {
-       nonisolated static func thumbnail(
+       /// Función `async` no aislada: en Swift 6.1 se ejecuta fuera del
+       /// hilo principal aunque se llame desde un ViewModel `@MainActor`.
+       static func thumbnails(
+           from dataByURL: [URL: Data],
+           maxPixelSize: Int = 300
+       ) async -> [URL: UIImage] {
+           var result: [URL: UIImage] = [:]
+
+           for (url, data) in dataByURL {
+               if Task.isCancelled { break }
+               result[url] = thumbnail(from: data, maxPixelSize: maxPixelSize)
+           }
+
+           return result
+       }
+
+       static func thumbnail(
            from data: Data,
            maxPixelSize: Int = 300
        ) -> UIImage? {
@@ -856,10 +894,9 @@ El caso de uso obtiene datos independientes en paralelo, agrupa y ordena lugares
    }
    ```
 
-5. Si Swift 6 muestra diagnósticos de aislamiento al devolver `UIImage` desde un contexto no aislado, no los silencies con `@unchecked Sendable`. En ese caso:
-   - conserva `Data` como resultado transferible;
-   - realiza una decodificación limitada por demanda en la capa de UI;
-   - o encapsula el uso de UIKit en una capa específicamente aislada, midiendo su impacto.
+   El ViewModel anterior ya llama a `ImageDecoder.thumbnails(from:)` con `await`; la decodificación y la reducción de tamaño ocurren fuera del `MainActor` y solo la asignación final a `imagesByURL` vuelve al hilo principal. `UIImage` es `Sendable` en el SDK de iOS 18, por lo que puede cruzar esa frontera.
+
+5. Si Swift 6 muestra diagnósticos de aislamiento con `UIImage`, no los silencies con `@unchecked Sendable`: conserva `Data` como resultado transferible desde el caso de uso y decodifica solo en `ImageDecoder`.
 
 6. En el View Controller, inicia y cancela la carga según el ciclo de vida:
 
@@ -906,39 +943,12 @@ El estado visual se modifica únicamente desde `MainActor`, mientras que la red,
 
 **Instrucciones:**
 
-1. Crea un repositorio falso en el target de pruebas:
+1. Crea un repositorio falso en el target de pruebas, `CampusExplorerTests/CampusExplorerRepositorySpy.swift`. Se declara como `actor` porque guarda estado mutable y el proyecto compila con concurrencia estricta de Swift 6; una clase con `@unchecked Sendable` solo ocultaría el problema:
 
    ```swift
    import CampusDomain
    import Foundation
 
-   final class CampusExplorerRepositorySpy: CampusExplorerRepository, @unchecked Sendable {
-       var places: [CampusPlace] = []
-       var categories: [CampusCategory] = []
-       var imageData: [URL: Data] = [:]
-
-       private(set) var fetchPlacesCallCount = 0
-       private(set) var fetchCategoriesCallCount = 0
-
-       func fetchPlaces() async throws -> [CampusPlace] {
-           fetchPlacesCallCount += 1
-           return places
-       }
-
-       func fetchCategories() async throws -> [CampusCategory] {
-           fetchCategoriesCallCount += 1
-           return categories
-       }
-
-       func fetchImageData(from url: URL) async throws -> Data {
-           imageData[url] ?? Data()
-       }
-   }
-   ```
-
-2. Para un proyecto con comprobación estricta de concurrencia, convierte el spy en `actor`:
-
-   ```swift
    actor CampusExplorerRepositorySpy: CampusExplorerRepository {
        var places: [CampusPlace] = []
        var categories: [CampusCategory] = []
@@ -968,11 +978,11 @@ El estado visual se modifica únicamente desde `MainActor`, mientras que la red,
    }
    ```
 
-3. Añade una prueba de agrupación y ordenación:
+2. Añade una prueba de agrupación y ordenación:
 
    ```swift
    import XCTest
-   @testable import CampusDomain
+   import CampusDomain
 
    final class LoadCampusExplorerUseCaseTests: XCTestCase {
        func testExecuteGroupsPlacesByCategory() async throws {
@@ -1014,7 +1024,7 @@ El estado visual se modifica únicamente desde `MainActor`, mientras que la red,
    }
    ```
 
-4. Ejecuta las pruebas desde Xcode o Terminal:
+3. Ejecuta las pruebas desde Xcode o Terminal:
 
    ```bash
    xcodebuild \
@@ -1164,6 +1174,7 @@ Registra los cambios en Git:
 ```bash
 git status
 git add \
+  CampusExplorer \
   Packages/CampusDomain \
   Packages/CampusNetworking \
   CampusExplorerTests \
@@ -1232,3 +1243,302 @@ git status
 En esta práctica migraste una carga de datos de `CampusExplorer` a Swift Concurrency. Aplicaste `async/await` para expresar operaciones asíncronas, `async let` para dependencias fijas, `withThrowingTaskGroup` para recursos visuales dinámicos y cancelación cooperativa para evitar trabajo innecesario.
 
 También protegiste respuestas compartidas mediante el actor `CampusCache`, mantuviste el estado de presentación bajo `MainActor` y utilizaste Instruments para justificar una mejora técnica basada en evidencia. Estos elementos constituyen una base reutilizable para módulos VIPER que necesiten separar presentación, lógica de negocio, acceso a datos y rendimiento de interfaz.
+
+---
+
+## Anexo. Correcciones y continuidad con el curso
+
+### A.1 Resumen de las correcciones de esta versión
+
+| Corrección | Motivo | Dónde |
+|---|---|---|
+| Nuevo puente `firstValue()` con `FirstValueBridge` | El original mutaba variables capturadas dentro de `onCancel`, que se ejecuta de forma concurrente; Swift 6 lo rechaza y la continuación podía no reanudarse si se cancelaba antes de suscribirse | Paso 3 |
+| El puente se aplica al `PlacesSearching` del laboratorio 2 | El ejemplo usaba un `CampusAPIService` con `placesPublisher()` que no existe en las prácticas anteriores | Paso 3 |
+| Fuente de datos `SampleCampusExplorerRepository` | No hay una API del campus con lugares, categorías e imágenes; la de Open Brewery DB no tiene coordenadas ni categorías | Paso 3 y A.2 |
+| Pantalla de Exploración completa | El laboratorio 2 no la tiene; la guía pedía medirla y modificarla sin crearla | Pasos 1 y 6, A.3 |
+| Miniaturas decodificadas fuera del `MainActor` | El ViewModel decodificaba `UIImage(data:)` en el hilo principal, contra el objetivo de la práctica | Paso 6 |
+| `git add` incluye la carpeta `CampusExplorer` | El ViewModel, el View Controller y el decodificador de la Exploración viven en la app y no se confirmaban | Validación y pruebas |
+| Espía de pruebas solo como `actor` | La versión con `@unchecked Sendable` contradecía la verificación del paso 2 | Paso 7 |
+| `import CampusDomain` en lugar de `@testable import` | Los tipos usados son públicos; `@testable` sobre un paquete local depende de la configuración de compilación | Pasos 4 y 7 |
+
+### A.2 Fuente de datos determinista
+
+Crea `Packages/CampusNetworking/Sources/CampusNetworking/SampleCampusExplorerRepository.swift`. Devuelve siempre los mismos lugares y categorías, con una latencia simulada, y descarga imágenes reales para que Time Profiler y Allocations muestren decodificación:
+
+```swift
+import CampusDomain
+import Foundation
+
+public struct SampleCampusExplorerRepository: CampusExplorerRepository {
+    private let session: URLSession
+    private let latency: Duration
+
+    public init(session: URLSession = .shared, latency: Duration = .milliseconds(400)) {
+        self.session = session
+        self.latency = latency
+    }
+
+    public func fetchCategories() async throws -> [CampusCategory] {
+        try await Task.sleep(for: latency)
+        return Self.categories
+    }
+
+    public func fetchPlaces() async throws -> [CampusPlace] {
+        try await Task.sleep(for: latency)
+        return Self.places
+    }
+
+    public func fetchImageData(from url: URL) async throws -> Data {
+        let (data, response) = try await session.data(from: url)
+        guard let http = response as? HTTPURLResponse,
+              (200...299).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        return data
+    }
+
+    private static let libraries = CampusCategory(
+        id: UUID(uuidString: "10000000-0000-0000-0000-000000000001")!,
+        name: "Bibliotecas"
+    )
+    private static let labs = CampusCategory(
+        id: UUID(uuidString: "10000000-0000-0000-0000-000000000002")!,
+        name: "Laboratorios"
+    )
+    private static let services = CampusCategory(
+        id: UUID(uuidString: "10000000-0000-0000-0000-000000000003")!,
+        name: "Servicios"
+    )
+
+    static let categories = [libraries, labs, services]
+
+    static let places: [CampusPlace] = [
+        place(1, "Biblioteca Central", libraries, 40.4170, -3.7040),
+        place(2, "Biblioteca de Ingeniería", libraries, 40.4182, -3.7021),
+        place(3, "Laboratorio de Innovación", labs, 40.4160, -3.7055),
+        place(4, "Laboratorio de Robótica", labs, 40.4195, -3.7010),
+        place(5, "Cafetería Norte", services, 40.4176, -3.7032),
+        place(6, "Centro Deportivo", services, 40.4150, -3.7070)
+    ]
+
+    private static func place(
+        _ number: Int,
+        _ name: String,
+        _ category: CampusCategory,
+        _ latitude: Double,
+        _ longitude: Double
+    ) -> CampusPlace {
+        CampusPlace(
+            id: UUID(uuidString: String(format: "20000000-0000-0000-0000-%012d", number))!,
+            name: name,
+            categoryID: category.id,
+            latitude: latitude,
+            longitude: longitude,
+            imageURL: URL(string: "https://picsum.photos/seed/campus\(number)/800/600")
+        )
+    }
+}
+```
+
+Notas:
+
+- La práctica requiere Internet para las imágenes, igual que el laboratorio 2. Sin conexión, el caso de uso falla y la pantalla muestra el mensaje de error.
+- Para aumentar la carga y hacer más visible la mejora en Instruments, multiplica `places` (por ejemplo, 200 lugares repartidos en las tres categorías).
+
+### A.3 Pantalla de Exploración y su conexión
+
+**1. Contenedor.** Añade a `AppDependencyContainer` una caché compartida y la fábrica del ViewModel:
+
+```swift
+import CampusDomain
+import CampusNetworking
+
+@MainActor
+final class AppDependencyContainer {
+    // … dependencias de los laboratorios 1 y 2
+
+    private let campusCache = CampusCache()
+
+    private lazy var campusExplorerRepository: any CampusExplorerRepository =
+        SampleCampusExplorerRepository()
+
+    func makeCampusExplorerViewModel() -> CampusExplorerViewModel {
+        CampusExplorerViewModel(
+            loadExplorerUseCase: LoadCampusExplorerUseCase(
+                repository: campusExplorerRepository,
+                cache: campusCache
+            )
+        )
+    }
+}
+```
+
+La caché vive en el contenedor para que sobreviva al cerrar y abrir la pantalla; así Allocations puede mostrar su reutilización (paso 8).
+
+**2. View Controller.** Crea `CampusExplorer/Features/Explorer/CampusExplorerViewController.swift`:
+
+```swift
+import Combine
+import CampusDomain
+import UIKit
+
+final class CampusExplorerViewController: UIViewController {
+    private let viewModel: CampusExplorerViewModel
+    private let tableView = UITableView(frame: .zero, style: .insetGrouped)
+    private let activityIndicator = UIActivityIndicatorView(style: .large)
+    private let messageLabel = UILabel()
+    private var cancellables = Set<AnyCancellable>()
+
+    init(viewModel: CampusExplorerViewModel) {
+        self.viewModel = viewModel
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Explorar campus"
+        view.backgroundColor = .systemBackground
+        configureViews()
+        bindViewModel()
+        viewModel.load()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        viewModel.cancelLoading()
+    }
+
+    private func configureViews() {
+        tableView.dataSource = self
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "ExplorerCell")
+        messageLabel.numberOfLines = 0
+        messageLabel.textAlignment = .center
+        messageLabel.textColor = .secondaryLabel
+
+        [tableView, activityIndicator, messageLabel].forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview($0)
+        }
+
+        NSLayoutConstraint.activate([
+            tableView.topAnchor.constraint(equalTo: view.topAnchor),
+            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            messageLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            messageLabel.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            messageLabel.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor)
+        ])
+    }
+
+    private func bindViewModel() {
+        viewModel.$groups
+            .combineLatest(viewModel.$imagesByURL)
+            .sink { [weak self] _, _ in self?.tableView.reloadData() }
+            .store(in: &cancellables)
+
+        viewModel.$isLoading
+            .sink { [weak self] isLoading in
+                isLoading
+                    ? self?.activityIndicator.startAnimating()
+                    : self?.activityIndicator.stopAnimating()
+            }
+            .store(in: &cancellables)
+
+        viewModel.$errorMessage
+            .sink { [weak self] message in
+                self?.messageLabel.text = message
+                self?.messageLabel.isHidden = message == nil
+            }
+            .store(in: &cancellables)
+    }
+}
+
+extension CampusExplorerViewController: UITableViewDataSource {
+    func numberOfSections(in tableView: UITableView) -> Int {
+        viewModel.groups.count
+    }
+
+    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        viewModel.groups[section].category.name
+    }
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        viewModel.groups[section].places.count
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        cellForRowAt indexPath: IndexPath
+    ) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "ExplorerCell", for: indexPath)
+        let place = viewModel.groups[indexPath.section].places[indexPath.row]
+
+        var configuration = UIListContentConfiguration.subtitleCell()
+        configuration.text = place.name
+        configuration.secondaryText = String(
+            format: "%.4f, %.4f",
+            place.latitude,
+            place.longitude
+        )
+        configuration.image = place.imageURL.flatMap { viewModel.imagesByURL[$0] }
+        configuration.imageProperties.maximumSize = CGSize(width: 64, height: 48)
+        configuration.imageProperties.cornerRadius = 6
+        cell.contentConfiguration = configuration
+
+        return cell
+    }
+}
+```
+
+**3. Coordinator.** En `PlacesCoordinator`, añade un botón **Explorar** a la pantalla de búsqueda del laboratorio 2 y el método que abre la nueva pantalla:
+
+```swift
+func showPlaces() {
+    let viewModel = dependencyContainer.makePlacesViewModel()
+    let viewController = PlacesViewController(viewModel: viewModel)
+
+    viewController.navigationItem.rightBarButtonItem = UIBarButtonItem(
+        title: "Explorar",
+        primaryAction: UIAction { [weak self] _ in
+            self?.showExplorer()
+        }
+    )
+
+    navigationController.setViewControllers([viewController], animated: false)
+}
+
+func showExplorer() {
+    let viewModel = dependencyContainer.makeCampusExplorerViewModel()
+    let viewController = CampusExplorerViewController(viewModel: viewModel)
+    navigationController.pushViewController(viewController, animated: true)
+}
+```
+
+El View Controller no conoce el repositorio ni la caché: recibe un ViewModel ya construido, igual que en los laboratorios 1 y 2.
+
+**4. Variante de línea base (opcional, para el paso 1).** Para medir un "antes" comparable, construye primero la pantalla con un ViewModel que llame directamente al repositorio, agrupe con `Dictionary(grouping:)`, ordene y decodifique con `UIImage(data:)` dentro de su `Task` en `@MainActor`. Mide esa versión en el paso 1 y sustitúyela después por el caso de uso de los pasos 4 a 6.
+
+### A.4 Continuidad con las prácticas siguientes
+
+| Práctica | Qué aprovecha de esta |
+|---|---|
+| 4 | Muestra `CampusPlace` (sus coordenadas) en un mapa con `CampusLocationKit` |
+| 5 | Adapta `CampusExplorerRepository` a Combine para probar `PlacesViewModel` |
+| 6 | Reutiliza el patrón Presenter `@MainActor` + Interactor `Sendable` en VIPER |
+
+### A.5 Verificación antes de publicar
+
+| Verificar | Cómo |
+|---|---|
+| Los paquetes compilan en modo Swift 6 | `swift build --package-path Packages/CampusDomain` y `swift build --package-path Packages/CampusNetworking` |
+| El puente `firstValue()` funciona y se cancela | Llamar `searchPlacesAsync(query: "san diego")` desde una `Task` y cancelarla antes de que responda; no debe quedar colgada |
+| La Exploración muestra tres secciones con miniaturas | Abrir **Explorar** desde la búsqueda |
+| Las pruebas pasan | `CampusCacheTests` y `LoadCampusExplorerUseCaseTests` con `** TEST SUCCEEDED **` |
+| Main Thread Checker sin avisos | Paso 8 |
