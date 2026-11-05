@@ -2,11 +2,11 @@
 
 ## Metadatos
 
-| Campo | Valor |
-|---|---|
-| Duración | 180 minutos |
-| Complejidad | Alta |
-| Nivel de Bloom | Aplicar |
+| Campo          | Valor       |
+|----------------|-------------|
+| Duración       | 180 minutos |
+| Complejidad    | Alta        |
+| Nivel de Bloom | Aplicar     |
 
 ## Descripción general
 
@@ -16,11 +16,11 @@ El resultado será una aplicación UIKit navegable en la que la vista no conoce 
 
 ## Objetivos de aprendizaje
 
-- [ ] Refactorizar una lista y un detalle hacia módulos VIPER con View, Interactor, Presenter, Entity, Router y Builder.
-- [ ] Crear `TaskListStateView`, un componente reutilizable para estados de carga, vacío y error.
-- [ ] Aplicar inyección de dependencias mediante `TaskRepositoryProtocol` y un contenedor de composición.
-- [ ] Implementar navegación desacoplada con `AppCoordinator` y `TaskFlowCoordinator`.
-- [ ] Compilar, ejecutar y validar manualmente el flujo lista → detalle → lista.
+- Refactorizar una lista y un detalle hacia módulos VIPER con View, Interactor, Presenter, Entity, Router y Builder.
+- Crear `TaskListStateView`, un componente reutilizable para estados de carga, vacío y error.
+- Aplicar inyección de dependencias mediante `TaskRepositoryProtocol` y un contenedor de composición.
+- Implementar navegación desacoplada con `AppCoordinator` y `TaskFlowCoordinator`.
+- Compilar, ejecutar y validar manualmente el flujo lista → detalle → lista.
 
 ## Requisitos previos
 
@@ -45,60 +45,56 @@ El resultado será una aplicación UIKit navegable en la que la vista no conoce 
 
 ### Configuración de software
 
-| Componente | Versión objetivo |
-|---|---|
-| macOS | Sequoia 15.5 |
-| Xcode | 16.4 |
-| Swift | 6.1 |
-| Deployment Target | iOS 18.0 |
-| SDK de compilación | iOS 18.5 |
-| Simulador | iPhone 16, iOS 18.5 |
-| Git | 2.46.0 o compatible |
-| Repositorio | `CampusExplorer` |
-| Rama principal | `main` |
-| Esquema compartido | `CampusExplorer` |
+| Componente         | Versión objetivo    |
+|--------------------|---------------------|
+| macOS              | Sequoia 15.5        |
+| Xcode              | 16.4                |
+| Swift              | 6.1                 |
+| Deployment Target  | iOS 18.0            |
+| SDK de compilación | iOS 18.5            |
+| Simulador          | iPhone 16, iOS 18.5 |
+| Git                | 2.46.0 o compatible |
+| Repositorio        | `CampusExplorer`    |
+| Rama principal     | `main`              |
+| Esquema compartido | `CampusExplorer`    |
 
 ### Preparación inicial
 
 1. Abre Terminal y accede al directorio obligatorio:
-
+   
    ```bash
    cd ~/Developer/CampusExplorer
    ```
-
 2. Comprueba el estado del repositorio y la rama actual:
-
+   
    ```bash
    git status
    git branch --show-current
    ```
-
 3. Si partes de un estado funcional previo, asegúrate de que no existen cambios sin confirmar. Crea la rama solicitada:
-
+   
    ```bash
    git switch main
    git pull --ff-only
    git switch -c feature/module6-viper-coordinator
    ```
-
 4. Verifica que existen el proyecto y los paquetes locales obligatorios:
-
+   
    ```bash
    ls CampusExplorer.xcodeproj
    ls Packages
    ```
-
+   
    La estructura mínima de paquetes debe contener:
-
+   
    ```text
    Packages/
    ├── CampusDomain/
    ├── CampusNetworking/
    └── CampusDesignSystem/
    ```
-
 5. Si no dispones del proyecto funcional anterior, crea un proyecto UIKit llamado **CampusExplorer** desde Xcode:
-
+   
    - Selecciona **File > New > Project > iOS > App**.
    - Product Name: `CampusExplorer`.
    - Interface: `Storyboard` desactivado.
@@ -119,7 +115,7 @@ El resultado será una aplicación UIKit navegable en la que la vista no conoce 
 **Instrucciones:**
 
 1. En Xcode, dentro del grupo principal del proyecto, crea los siguientes grupos:
-
+   
    ```text
    App/
    Core/
@@ -127,18 +123,16 @@ El resultado será una aplicación UIKit navegable en la que la vista no conoce 
    ├── TaskList/
    └── TaskDetail/
    ```
-
 2. Dentro de `Core`, crea los grupos:
-
+   
    ```text
    Core/
    ├── Entities/
    ├── Repositories/
    └── Composition/
    ```
-
 3. Dentro de `Features/TaskList`, crea los grupos:
-
+   
    ```text
    TaskList/
    ├── Contracts/
@@ -149,25 +143,24 @@ El resultado será una aplicación UIKit navegable en la que la vista no conoce 
    ├── Builder/
    └── Components/
    ```
-
 4. Dentro de `Features/TaskDetail`, crea una estructura equivalente:
-
+   
    ```text
    TaskDetail/
    ├── Contracts/
    ├── View/
    ├── Presenter/
    ├── Interactor/
-   ├── Router/
    └── Builder/
    ```
-
 5. En Terminal, registra el punto de partida de la práctica:
-
+   
    ```bash
    git status
    git branch --show-current
    ```
+
+> **Grupos o paquetes:** en esta práctica `Core` y `Features` son grupos de Xcode dentro de la app, no paquetes SPM. Es una decisión didáctica para ver el flujo VIPER completo en un solo target. La frontera es solo una convención: nada impide que la View importe el repositorio. Extraer `TaskList` a un paquete `Packages/TaskFeature` es el siguiente paso opcional (ver **Anexo A.3**).
 
 **Resultado esperado:**
 
@@ -187,7 +180,7 @@ La salida debe ser:
 feature/module6-viper-coordinator
 ```
 
----
+* * *
 
 ### Paso 2. Implementar las entidades y el repositorio determinista
 
@@ -195,16 +188,16 @@ feature/module6-viper-coordinator
 
 **Instrucciones:**
 
-1. Crea el archivo `Core/Entities/Task.swift`:
-
+1. Crea el archivo `Core/Entities/CampusTask.swift`:
+   
    ```swift
    import Foundation
-
+   
    enum TaskStatus: String, CaseIterable, Equatable, Sendable {
        case pending
        case inProgress
        case completed
-
+   
        var displayName: String {
            switch self {
            case .pending:
@@ -216,13 +209,13 @@ feature/module6-viper-coordinator
            }
        }
    }
-
-   struct Task: Identifiable, Equatable, Sendable {
+   
+   struct CampusTask: Identifiable, Equatable, Sendable {
        let id: UUID
        let title: String
        let detail: String
        let status: TaskStatus
-
+   
        init(
            id: UUID = UUID(),
            title: String,
@@ -236,26 +229,24 @@ feature/module6-viper-coordinator
        }
    }
    ```
-
 2. Crea `Core/Repositories/TaskRepositoryProtocol.swift`:
-
+   
    ```swift
    import Foundation
-
+   
    protocol TaskRepositoryProtocol: Sendable {
-       func fetchTasks() async throws -> [Task]
+       func fetchTasks() async throws -> [CampusTask]
    }
    ```
-
 3. Crea `Core/Repositories/InMemoryTaskRepository.swift`:
-
+   
    ```swift
    import Foundation
-
+   
    struct InMemoryTaskRepository: TaskRepositoryProtocol {
        enum RepositoryError: LocalizedError {
            case simulatedFailure
-
+   
            var errorDescription: String? {
                switch self {
                case .simulatedFailure:
@@ -263,71 +254,70 @@ feature/module6-viper-coordinator
                }
            }
        }
-
+   
        enum Mode: Sendable {
            case content
            case empty
            case failure
        }
-
+   
        private let mode: Mode
-
+   
        init(mode: Mode = .content) {
            self.mode = mode
        }
-
-       func fetchTasks() async throws -> [Task] {
+   
+       func fetchTasks() async throws -> [CampusTask] {
            try await Task.sleep(for: .milliseconds(500))
-
+   
            switch mode {
            case .content:
                return [
-                   Task(
+                   CampusTask(
                        id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
                        title: "Revisar arquitectura VIPER",
                        detail: "Comprobar que View, Presenter, Interactor y Router mantienen responsabilidades separadas.",
                        status: .inProgress
                    ),
-                   Task(
+                   CampusTask(
                        id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
                        title: "Crear pruebas unitarias",
                        detail: "Preparar dobles de prueba para el repositorio y validar la transformación a modelos de vista.",
                        status: .pending
                    ),
-                   Task(
+                   CampusTask(
                        id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!,
                        title: "Configurar CI",
                        detail: "Verificar que GitHub Actions puede compilar el esquema compartido CampusExplorer.",
                        status: .completed
                    )
                ]
-
+   
            case .empty:
                return []
-
+   
            case .failure:
                throw RepositoryError.simulatedFailure
            }
        }
    }
    ```
-
 4. Compila el proyecto desde Xcode con **Product > Build**.
 
 **Resultado esperado:**
 
-El proyecto reconoce las entidades `Task` y `TaskStatus`, y `InMemoryTaskRepository` implementa el contrato de acceso a datos.
+El proyecto reconoce las entidades `CampusTask` y `TaskStatus`, y `InMemoryTaskRepository` implementa el contrato de acceso a datos.
 
 **Verificación:**
 
 Comprueba que las siguientes afirmaciones son correctas:
 
-- `Task` no importa UIKit.
+- `CampusTask` no importa UIKit.
 - El protocolo no conoce la implementación concreta del repositorio.
 - El repositorio puede devolver contenido, lista vacía o error simulado.
 - La latencia de 500 ms permite observar el estado de carga sin bloquear la interfaz.
 
----
+* * *
 
 ### Paso 3. Crear el componente reutilizable de estado de lista
 
@@ -336,56 +326,56 @@ Comprueba que las siguientes afirmaciones son correctas:
 **Instrucciones:**
 
 1. Crea `Features/TaskList/Components/TaskListStateView.swift`:
-
+   
    ```swift
    import UIKit
-
+   
    final class TaskListStateView: UIView {
-       enum State {
+       enum State: Equatable {
            case hidden
            case loading
            case empty(message: String)
            case error(message: String)
        }
-
+   
        var onRetry: (() -> Void)?
-
+   
        private let activityIndicator = UIActivityIndicatorView(style: .large)
        private let titleLabel = UILabel()
        private let messageLabel = UILabel()
        private let retryButton = UIButton(type: .system)
        private let stackView = UIStackView()
-
+   
        override init(frame: CGRect) {
            super.init(frame: frame)
            configureView()
        }
-
+   
        required init?(coder: NSCoder) {
            fatalError("init(coder:) has not been implemented")
        }
-
+   
        func render(state: State) {
            isHidden = state == .hidden
-
+   
            activityIndicator.stopAnimating()
            titleLabel.isHidden = true
            messageLabel.isHidden = true
            retryButton.isHidden = true
-
+   
            switch state {
            case .hidden:
                break
-
+   
            case .loading:
                activityIndicator.startAnimating()
-
+   
            case let .empty(message):
                titleLabel.text = "No hay tareas"
                messageLabel.text = message
                titleLabel.isHidden = false
                messageLabel.isHidden = false
-
+   
            case let .error(message):
                titleLabel.text = "No se pudo cargar"
                messageLabel.text = message
@@ -394,35 +384,35 @@ Comprueba que las siguientes afirmaciones son correctas:
                retryButton.isHidden = false
            }
        }
-
+   
        private func configureView() {
            backgroundColor = .systemBackground
-
+   
            titleLabel.font = .preferredFont(forTextStyle: .headline)
            titleLabel.textAlignment = .center
-
+   
            messageLabel.font = .preferredFont(forTextStyle: .subheadline)
            messageLabel.textAlignment = .center
            messageLabel.textColor = .secondaryLabel
            messageLabel.numberOfLines = 0
-
+   
            retryButton.setTitle("Reintentar", for: .normal)
            retryButton.addTarget(self, action: #selector(didTapRetry), for: .touchUpInside)
-
+   
            stackView.axis = .vertical
            stackView.alignment = .center
            stackView.spacing = 12
            stackView.translatesAutoresizingMaskIntoConstraints = false
-
+   
            [
                activityIndicator,
                titleLabel,
                messageLabel,
                retryButton
            ].forEach(stackView.addArrangedSubview)
-
+   
            addSubview(stackView)
-
+   
            NSLayoutConstraint.activate([
                stackView.centerXAnchor.constraint(equalTo: centerXAnchor),
                stackView.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -435,19 +425,17 @@ Comprueba que las siguientes afirmaciones son correctas:
                    constant: -24
                )
            ])
-
+   
            render(state: .hidden)
        }
-
+   
        @objc
        private func didTapRetry() {
            onRetry?()
        }
    }
    ```
-
 2. Observa que el componente recibe un estado mediante `render(state:)` y no conoce al presenter, al interactor ni al repositorio.
-
 3. Compila el proyecto.
 
 **Resultado esperado:**
@@ -458,7 +446,7 @@ Comprueba que las siguientes afirmaciones son correctas:
 
 Revisa que la única acción externa del componente sea el closure `onRetry`. La vista no debe instanciar controladores, repositorios, routers ni coordinators.
 
----
+* * *
 
 ### Paso 4. Definir los contratos VIPER de TaskList
 
@@ -467,52 +455,54 @@ Revisa que la única acción externa del componente sea el closure `onRetry`. La
 **Instrucciones:**
 
 1. Crea `Features/TaskList/Contracts/TaskListContracts.swift`:
-
+   
    ```swift
    import Foundation
-
+   
    struct TaskListItemViewModel: Equatable {
        let title: String
        let subtitle: String
        let statusText: String
    }
-
+   
+   @MainActor
    protocol TaskListViewProtocol: AnyObject {
        func showLoading()
        func showTasks(_ items: [TaskListItemViewModel])
        func showEmpty(message: String)
        func showError(message: String)
    }
-
+   
+   @MainActor
    protocol TaskListPresenterProtocol: AnyObject {
        func viewDidLoad()
        func didTapRetry()
        func didSelectTask(at index: Int)
    }
-
-   protocol TaskListInteractorProtocol: AnyObject {
-       func loadTasks() async throws -> [Task]
+   
+   protocol TaskListInteractorProtocol: Sendable {
+       func loadTasks() async throws -> [CampusTask]
    }
-
+   
+   @MainActor
    protocol TaskListRouterProtocol: AnyObject {
-       func showDetail(for task: Task)
+       func showDetail(for task: CampusTask)
    }
-
+   
+   @MainActor
    protocol TaskListRoutingDelegate: AnyObject {
-       func showTaskDetail(task: Task)
+       func showTaskDetail(task: CampusTask)
    }
    ```
-
 2. Revisa la dirección de las responsabilidades:
-
-   | Capa | Conoce |
-   |---|---|
-   | View | Presenter y modelos de vista |
-   | Presenter | View, Interactor, Router y entidades |
-   | Interactor | Protocolo de repositorio y entidades |
-   | Router | Delegado de navegación y entidad seleccionada |
+   
+   | Capa        | Conoce                                        |
+   |-------------|-----------------------------------------------|
+   | View        | Presenter y modelos de vista                  |
+   | Presenter   | View, Interactor, Router y entidades          |
+   | Interactor  | Protocolo de repositorio y entidades          |
+   | Router      | Delegado de navegación y entidad seleccionada |
    | Coordinator | Builders concretos y `UINavigationController` |
-
 3. Compila el proyecto.
 
 **Resultado esperado:**
@@ -523,7 +513,7 @@ La funcionalidad dispone de protocolos que permiten cambiar implementaciones y p
 
 Confirma que `TaskListViewProtocol` no expone `UITableView`, `UIViewController` ni `TaskRepositoryProtocol`.
 
----
+* * *
 
 ### Paso 5. Implementar Interactor, Presenter y Router de TaskList
 
@@ -532,55 +522,54 @@ Confirma que `TaskListViewProtocol` no expone `UITableView`, `UIViewController` 
 **Instrucciones:**
 
 1. Crea `Features/TaskList/Interactor/TaskListInteractor.swift`:
-
+   
    ```swift
    import Foundation
-
-   final class TaskListInteractor: TaskListInteractorProtocol {
+   
+   final class TaskListInteractor: TaskListInteractorProtocol, Sendable {
        private let repository: any TaskRepositoryProtocol
-
+   
        init(repository: any TaskRepositoryProtocol) {
            self.repository = repository
        }
-
-       func loadTasks() async throws -> [Task] {
+   
+       func loadTasks() async throws -> [CampusTask] {
            try await repository.fetchTasks()
        }
    }
    ```
-
 2. Crea `Features/TaskList/Router/TaskListRouter.swift`:
-
+   
    ```swift
    import Foundation
-
+   
+   @MainActor
    final class TaskListRouter: TaskListRouterProtocol {
        weak var delegate: TaskListRoutingDelegate?
-
+   
        init(delegate: TaskListRoutingDelegate) {
            self.delegate = delegate
        }
-
-       func showDetail(for task: Task) {
+   
+       func showDetail(for task: CampusTask) {
            delegate?.showTaskDetail(task: task)
        }
    }
    ```
-
 3. Crea `Features/TaskList/Presenter/TaskListPresenter.swift`:
-
+   
    ```swift
    import Foundation
-
+   
    @MainActor
    final class TaskListPresenter: TaskListPresenterProtocol {
        private weak var view: TaskListViewProtocol?
        private let interactor: TaskListInteractorProtocol
        private let router: TaskListRouterProtocol
-
-       private var tasks: [Task] = []
+   
+       private var tasks: [CampusTask] = []
        private var loadTask: Task<Void, Never>?
-
+   
        init(
            view: TaskListViewProtocol,
            interactor: TaskListInteractorProtocol,
@@ -590,45 +579,45 @@ Confirma que `TaskListViewProtocol` no expone `UITableView`, `UIViewController` 
            self.interactor = interactor
            self.router = router
        }
-
+   
        deinit {
            loadTask?.cancel()
        }
-
+   
        func viewDidLoad() {
            loadTasks()
        }
-
+   
        func didTapRetry() {
            loadTasks()
        }
-
+   
        func didSelectTask(at index: Int) {
            guard tasks.indices.contains(index) else {
                return
            }
-
+   
            router.showDetail(for: tasks[index])
        }
-
+   
        private func loadTasks() {
            loadTask?.cancel()
            view?.showLoading()
-
+   
            loadTask = Task { [weak self] in
                guard let self else {
                    return
                }
-
+   
                do {
                    let tasks = try await interactor.loadTasks()
-
+   
                    guard !Task.isCancelled else {
                        return
                    }
-
+   
                    self.tasks = tasks
-
+   
                    if tasks.isEmpty {
                        view?.showEmpty(
                            message: "Cuando agregues tareas, aparecerán en esta lista."
@@ -641,14 +630,14 @@ Confirma que `TaskListViewProtocol` no expone `UITableView`, `UIViewController` 
                                statusText: $0.status.displayName
                            )
                        }
-
+   
                        view?.showTasks(viewModels)
                    }
                } catch {
                    guard !Task.isCancelled else {
                        return
                    }
-
+   
                    view?.showError(
                        message: "Comprueba tu conexión o vuelve a intentarlo."
                    )
@@ -657,9 +646,8 @@ Confirma que `TaskListViewProtocol` no expone `UITableView`, `UIViewController` 
        }
    }
    ```
-
 4. Analiza la gestión de memoria:
-
+   
    - `view` es `weak` para evitar un ciclo entre presenter y view.
    - `delegate` del router es `weak` porque será el coordinator.
    - La tarea de carga se cancela antes de iniciar otra carga.
@@ -667,13 +655,13 @@ Confirma que `TaskListViewProtocol` no expone `UITableView`, `UIViewController` 
 
 **Resultado esperado:**
 
-El presenter coordina el caso de uso y convierte entidades `Task` en `TaskListItemViewModel`. El router no presenta controladores directamente: delega la ruta al coordinator.
+El presenter coordina el caso de uso y convierte entidades `CampusTask` en `TaskListItemViewModel`. El router no presenta controladores directamente: delega la ruta al coordinator.
 
 **Verificación:**
 
 Comprueba que `TaskListInteractor` no importa UIKit y que `TaskListPresenter` no crea instancias de `TaskDetailViewController`.
 
----
+* * *
 
 ### Paso 6. Implementar la vista y el Builder de TaskList
 
@@ -682,27 +670,27 @@ Comprueba que `TaskListInteractor` no importa UIKit y que `TaskListPresenter` no
 **Instrucciones:**
 
 1. Crea `Features/TaskList/View/TaskListViewController.swift`:
-
+   
    ```swift
    import UIKit
-
+   
    final class TaskListViewController: UIViewController {
        var presenter: TaskListPresenterProtocol!
-
+   
        private let tableView = UITableView(frame: .zero, style: .insetGrouped)
        private let stateView = TaskListStateView()
        private var items: [TaskListItemViewModel] = []
-
+   
        override func viewDidLoad() {
            super.viewDidLoad()
            configureView()
            presenter.viewDidLoad()
        }
-
+   
        private func configureView() {
            title = "Tareas"
            view.backgroundColor = .systemBackground
-
+   
            tableView.translatesAutoresizingMaskIntoConstraints = false
            tableView.dataSource = self
            tableView.delegate = self
@@ -710,21 +698,21 @@ Comprueba que `TaskListInteractor` no importa UIKit y que `TaskListPresenter` no
                UITableViewCell.self,
                forCellReuseIdentifier: "TaskCell"
            )
-
+   
            stateView.translatesAutoresizingMaskIntoConstraints = false
            stateView.onRetry = { [weak self] in
                self?.presenter.didTapRetry()
            }
-
+   
            view.addSubview(tableView)
            view.addSubview(stateView)
-
+   
            NSLayoutConstraint.activate([
                tableView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
                tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
                tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
                tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-
+   
                stateView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
                stateView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
                stateView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -732,31 +720,31 @@ Comprueba que `TaskListInteractor` no importa UIKit y que `TaskListPresenter` no
            ])
        }
    }
-
+   
    extension TaskListViewController: TaskListViewProtocol {
        func showLoading() {
            stateView.render(state: .loading)
        }
-
+   
        func showTasks(_ items: [TaskListItemViewModel]) {
            self.items = items
            tableView.reloadData()
            stateView.render(state: .hidden)
        }
-
+   
        func showEmpty(message: String) {
            items = []
            tableView.reloadData()
            stateView.render(state: .empty(message: message))
        }
-
+   
        func showError(message: String) {
            items = []
            tableView.reloadData()
            stateView.render(state: .error(message: message))
        }
    }
-
+   
    extension TaskListViewController: UITableViewDataSource {
        func tableView(
            _ tableView: UITableView,
@@ -764,7 +752,7 @@ Comprueba que `TaskListInteractor` no importa UIKit y que `TaskListPresenter` no
        ) -> Int {
            items.count
        }
-
+   
        func tableView(
            _ tableView: UITableView,
            cellForRowAt indexPath: IndexPath
@@ -773,20 +761,20 @@ Comprueba que `TaskListInteractor` no importa UIKit y que `TaskListPresenter` no
                withIdentifier: "TaskCell",
                for: indexPath
            )
-
+   
            let item = items[indexPath.row]
-
+   
            var content = cell.defaultContentConfiguration()
            content.text = item.title
            content.secondaryText = "\(item.statusText) · \(item.subtitle)"
            content.secondaryTextProperties.numberOfLines = 2
            cell.contentConfiguration = content
            cell.accessoryType = .disclosureIndicator
-
+   
            return cell
        }
    }
-
+   
    extension TaskListViewController: UITableViewDelegate {
        func tableView(
            _ tableView: UITableView,
@@ -797,12 +785,12 @@ Comprueba que `TaskListInteractor` no importa UIKit y que `TaskListPresenter` no
        }
    }
    ```
-
 2. Crea `Features/TaskList/Builder/TaskListModuleBuilder.swift`:
-
+   
    ```swift
    import UIKit
-
+   
+   @MainActor
    enum TaskListModuleBuilder {
        static func build(
            repository: any TaskRepositoryProtocol,
@@ -811,20 +799,19 @@ Comprueba que `TaskListInteractor` no importa UIKit y que `TaskListPresenter` no
            let viewController = TaskListViewController()
            let interactor = TaskListInteractor(repository: repository)
            let router = TaskListRouter(delegate: routingDelegate)
-
+   
            let presenter = TaskListPresenter(
                view: viewController,
                interactor: interactor,
                router: router
            )
-
+   
            viewController.presenter = presenter
-
+   
            return viewController
        }
    }
    ```
-
 3. Compila el proyecto.
 
 **Resultado esperado:**
@@ -845,7 +832,7 @@ UITableViewDelegate
 
 La vista no debe ejecutar `navigationController?.pushViewController(...)`.
 
----
+* * *
 
 ### Paso 7. Implementar el módulo VIPER mínimo TaskDetail
 
@@ -854,61 +841,57 @@ La vista no debe ejecutar `navigationController?.pushViewController(...)`.
 **Instrucciones:**
 
 1. Crea `Features/TaskDetail/Contracts/TaskDetailContracts.swift`:
-
+   
    ```swift
    import Foundation
-
+   
    struct TaskDetailViewModel: Equatable {
        let title: String
        let detail: String
        let status: String
    }
-
+   
+   @MainActor
    protocol TaskDetailViewProtocol: AnyObject {
        func showTask(_ viewModel: TaskDetailViewModel)
    }
-
+   
+   @MainActor
    protocol TaskDetailPresenterProtocol: AnyObject {
        func viewDidLoad()
    }
-
+   
    protocol TaskDetailInteractorProtocol: AnyObject {
-       func task() -> Task
-   }
-
-   protocol TaskDetailRouterProtocol: AnyObject {
-       func close()
+       func task() -> CampusTask
    }
    ```
-
 2. Crea `Features/TaskDetail/Interactor/TaskDetailInteractor.swift`:
-
+   
    ```swift
    import Foundation
-
+   
    final class TaskDetailInteractor: TaskDetailInteractorProtocol {
-       private let selectedTask: Task
-
-       init(task: Task) {
+       private let selectedTask: CampusTask
+   
+       init(task: CampusTask) {
            self.selectedTask = task
        }
-
-       func task() -> Task {
+   
+       func task() -> CampusTask {
            selectedTask
        }
    }
    ```
-
 3. Crea `Features/TaskDetail/Presenter/TaskDetailPresenter.swift`:
-
+   
    ```swift
    import Foundation
-
+   
    @MainActor
    final class TaskDetailPresenter: TaskDetailPresenterProtocol {
        private weak var view: TaskDetailViewProtocol?
        private let interactor: TaskDetailInteractorProtocol
-
+   
        init(
            view: TaskDetailViewProtocol,
            interactor: TaskDetailInteractorProtocol
@@ -916,75 +899,60 @@ La vista no debe ejecutar `navigationController?.pushViewController(...)`.
            self.view = view
            self.interactor = interactor
        }
-
+   
        func viewDidLoad() {
            let task = interactor.task()
-
+   
            let viewModel = TaskDetailViewModel(
                title: task.title,
                detail: task.detail,
                status: task.status.displayName
            )
-
+   
            view?.showTask(viewModel)
        }
    }
    ```
-
-4. Crea `Features/TaskDetail/Router/TaskDetailRouter.swift`:
-
+4. Crea `Features/TaskDetail/View/TaskDetailViewController.swift`:
+   
    ```swift
    import UIKit
-
-   final class TaskDetailRouter: TaskDetailRouterProtocol {
-       weak var viewController: UIViewController?
-
-       func close() {
-           viewController?.navigationController?.popViewController(animated: true)
-       }
-   }
-   ```
-
-5. Crea `Features/TaskDetail/View/TaskDetailViewController.swift`:
-
-   ```swift
-   import UIKit
-
+   
    final class TaskDetailViewController: UIViewController {
        var presenter: TaskDetailPresenterProtocol!
-
+   
        private let titleLabel = UILabel()
        private let statusLabel = UILabel()
        private let detailLabel = UILabel()
        private let stackView = UIStackView()
-
+   
        override func viewDidLoad() {
            super.viewDidLoad()
            configureView()
            presenter.viewDidLoad()
        }
-
+   
        private func configureView() {
            title = "Detalle"
            view.backgroundColor = .systemBackground
-
+   
            titleLabel.font = .preferredFont(forTextStyle: .title2)
            titleLabel.numberOfLines = 0
-
+   
            statusLabel.font = .preferredFont(forTextStyle: .subheadline)
            statusLabel.textColor = .secondaryLabel
-
+   
            detailLabel.font = .preferredFont(forTextStyle: .body)
            detailLabel.numberOfLines = 0
-
+   
            stackView.axis = .vertical
            stackView.spacing = 16
            stackView.translatesAutoresizingMaskIntoConstraints = false
-
+   
            [titleLabel, statusLabel, detailLabel].forEach(stackView.addArrangedSubview)
-
+   
            view.addSubview(stackView)
-
+   
            NSLayoutConstraint.activate([
                stackView.topAnchor.constraint(
                    equalTo: view.safeAreaLayoutGuide.topAnchor,
@@ -999,7 +967,7 @@ La vista no debe ejecutar `navigationController?.pushViewController(...)`.
            ])
        }
    }
-
+   
    extension TaskDetailViewController: TaskDetailViewProtocol {
        func showTask(_ viewModel: TaskDetailViewModel) {
            titleLabel.text = viewModel.title
@@ -1008,40 +976,40 @@ La vista no debe ejecutar `navigationController?.pushViewController(...)`.
        }
    }
    ```
-
-6. Crea `Features/TaskDetail/Builder/TaskDetailModuleBuilder.swift`:
-
+5. Crea `Features/TaskDetail/Builder/TaskDetailModuleBuilder.swift`:
+   
    ```swift
    import UIKit
-
+   
+   @MainActor
    enum TaskDetailModuleBuilder {
-       static func build(task: Task) -> UIViewController {
+       static func build(task: CampusTask) -> UIViewController {
            let viewController = TaskDetailViewController()
            let interactor = TaskDetailInteractor(task: task)
-           let router = TaskDetailRouter()
-
+   
            let presenter = TaskDetailPresenter(
                view: viewController,
                interactor: interactor
            )
-
+   
            viewController.presenter = presenter
-           router.viewController = viewController
-
+   
            return viewController
        }
    }
    ```
 
+6. El detalle no necesita Router: no navega a ninguna pantalla y el regreso lo resuelve el botón Atrás de `UINavigationController`. Si más adelante agregas una acción (por ejemplo, editar), crea entonces su Router y consérvalo desde el Presenter, igual que en `TaskList`.
+
 **Resultado esperado:**
 
-El detalle recibe una `Task` como entidad de entrada y muestra un modelo de vista preparado por el presenter.
+El detalle recibe una `CampusTask` como entidad de entrada y muestra un modelo de vista preparado por el presenter.
 
 **Verificación:**
 
 Confirma que `TaskDetailModuleBuilder.build(task:)` es el único punto de construcción del detalle y que `TaskListViewController` no importa ni instancia `TaskDetailViewController`.
 
----
+* * *
 
 ### Paso 8. Crear el contenedor de composición y los coordinators
 
@@ -1049,29 +1017,31 @@ Confirma que `TaskDetailModuleBuilder.build(task:)` es el único punto de constr
 
 **Instrucciones:**
 
-1. Crea `Core/Composition/AppContainer.swift`:
+> **Si partes del proyecto de los laboratorios 1 a 5:** ya existen `AppDependencyContainer` y `AppCoordinator`. No crees un segundo contenedor ni un segundo `AppCoordinator`, porque los nombres chocan. Crea solo `TaskFlowCoordinator` (instrucción 2) y conéctalo con el **Anexo A.2**. Las instrucciones 1, 3 y 4 son para un proyecto nuevo.
 
+1. Crea `Core/Composition/AppContainer.swift`:
+   
    ```swift
    import Foundation
-
+   
    final class AppContainer {
        let taskRepository: any TaskRepositoryProtocol
-
+   
        init(taskRepository: any TaskRepositoryProtocol = InMemoryTaskRepository()) {
            self.taskRepository = taskRepository
        }
    }
    ```
-
 2. Crea `App/TaskFlowCoordinator.swift`:
-
+   
    ```swift
    import UIKit
-
+   
+   @MainActor
    final class TaskFlowCoordinator: TaskListRoutingDelegate {
        private let navigationController: UINavigationController
        private let container: AppContainer
-
+   
        init(
            navigationController: UINavigationController,
            container: AppContainer
@@ -1079,20 +1049,20 @@ Confirma que `TaskDetailModuleBuilder.build(task:)` es el único punto de constr
            self.navigationController = navigationController
            self.container = container
        }
-
+   
        func start() {
            let taskListViewController = TaskListModuleBuilder.build(
                repository: container.taskRepository,
                routingDelegate: self
            )
-
+   
            navigationController.setViewControllers(
                [taskListViewController],
                animated: false
            )
        }
-
-       func showTaskDetail(task: Task) {
+   
+       func showTaskDetail(task: CampusTask) {
            let detailViewController = TaskDetailModuleBuilder.build(task: task)
            navigationController.pushViewController(
                detailViewController,
@@ -1101,49 +1071,48 @@ Confirma que `TaskDetailModuleBuilder.build(task:)` es el único punto de constr
        }
    }
    ```
-
 3. Crea `App/AppCoordinator.swift`:
-
+   
    ```swift
    import UIKit
-
+   
+   @MainActor
    final class AppCoordinator {
        private let window: UIWindow
        private let container: AppContainer
        private let navigationController: UINavigationController
        private var taskFlowCoordinator: TaskFlowCoordinator?
-
+   
        init(window: UIWindow, container: AppContainer = AppContainer()) {
            self.window = window
            self.container = container
            self.navigationController = UINavigationController()
        }
-
+   
        func start() {
            let taskFlowCoordinator = TaskFlowCoordinator(
                navigationController: navigationController,
                container: container
            )
-
+   
            self.taskFlowCoordinator = taskFlowCoordinator
-
+   
            window.rootViewController = navigationController
            window.makeKeyAndVisible()
-
+   
            taskFlowCoordinator.start()
        }
    }
    ```
-
 4. Sustituye el contenido de `App/SceneDelegate.swift` por el siguiente código. Si tu proyecto usa `AppDelegate` sin escenas, adapta esta misma composición al método `application(_:didFinishLaunchingWithOptions:)`.
-
+   
    ```swift
    import UIKit
-
+   
    class SceneDelegate: UIResponder, UIWindowSceneDelegate {
        var window: UIWindow?
        private var appCoordinator: AppCoordinator?
-
+   
        func scene(
            _ scene: UIScene,
            willConnectTo session: UISceneSession,
@@ -1152,18 +1121,17 @@ Confirma que `TaskDetailModuleBuilder.build(task:)` es el único punto de constr
            guard let windowScene = scene as? UIWindowScene else {
                return
            }
-
+   
            let window = UIWindow(windowScene: windowScene)
            let coordinator = AppCoordinator(window: window)
-
+   
            self.window = window
            self.appCoordinator = coordinator
-
+   
            coordinator.start()
        }
    }
    ```
-
 5. Comprueba que no queda código de inicio anterior que asigne otro `rootViewController`.
 
 **Resultado esperado:**
@@ -1192,7 +1160,7 @@ TaskListRouter
 → UINavigationController.pushViewController
 ```
 
----
+* * *
 
 ### Paso 9. Documentar las dependencias y compilar desde Terminal
 
@@ -1201,15 +1169,14 @@ TaskListRouter
 **Instrucciones:**
 
 1. Añade al archivo `README.md` una sección llamada `## Arquitectura VIPER y navegación`.
-
 2. Incluye el siguiente diagrama de dependencias:
 
-   ```markdown
+   ````markdown
    ## Arquitectura VIPER y navegación
 
    ```text
    AppCoordinator
-      ├── AppContainer
+      ├── AppContainer (o AppDependencyContainer, ver Anexo A.2)
       │    └── TaskRepositoryProtocol
       │         └── InMemoryTaskRepository
       └── TaskFlowCoordinator
@@ -1221,8 +1188,7 @@ TaskListRouter
            └── TaskDetailModuleBuilder
                 ├── TaskDetailViewController
                 ├── TaskDetailPresenter
-                ├── TaskDetailInteractor
-                └── TaskDetailRouter
+                └── TaskDetailInteractor
 
    TaskListViewController
       → TaskListPresenter
@@ -1236,16 +1202,15 @@ TaskListRouter
    ```
 
    La View no consulta repositorios ni realiza navegación directa. El Presenter no crea View Controllers. El Router solicita navegación al Coordinator mediante un protocolo.
-   ```
+   ````
 
 3. Lista los esquemas disponibles:
-
+   
    ```bash
    xcodebuild -list -project CampusExplorer.xcodeproj
    ```
-
 4. Compila usando el destino obligatorio:
-
+   
    ```bash
    xcodebuild \
      -project CampusExplorer.xcodeproj \
@@ -1272,33 +1237,33 @@ Confirma que el archivo `README.md` documenta el flujo y que el proyecto compila
 ### Prueba manual del flujo principal
 
 1. Ejecuta el esquema `CampusExplorer` en:
-
+   
    ```text
    iPhone 16 — iOS 18.5
    ```
-
 2. Comprueba el estado inicial:
+   
    - Se muestra temporalmente el indicador de carga.
    - La barra de navegación muestra el título **Tareas**.
-
 3. Espera la respuesta del repositorio determinista:
+   
    - Deben aparecer tres tareas.
    - Cada celda muestra título, estado y descripción.
    - Cada celda muestra un indicador de navegación.
-
 4. Selecciona **Revisar arquitectura VIPER**:
+   
    - Debe abrirse la pantalla **Detalle**.
    - Deben mostrarse título, estado y descripción completa.
    - La navegación debe usar una transición de `push`.
-
 5. Pulsa el botón Atrás:
+   
    - Debe volver a la lista.
    - La lista debe seguir siendo la pantalla raíz del `UINavigationController`.
 
 ### Prueba del estado vacío
 
-1. En `AppContainer.swift`, cambia temporalmente la dependencia por:
-
+1. En `AppContainer.swift` (o en `taskRepository` de `AppDependencyContainer`, si seguiste el Anexo A.2), cambia temporalmente la dependencia por:
+   
    ```swift
    init(
        taskRepository: any TaskRepositoryProtocol =
@@ -1307,20 +1272,18 @@ Confirma que el archivo `README.md` documenta el flujo y que el proyecto compila
        self.taskRepository = taskRepository
    }
    ```
-
 2. Ejecuta la aplicación.
-
 3. Verifica:
+   
    - No se muestran celdas.
    - Se muestra el título **No hay tareas**.
    - Se muestra el mensaje informativo configurado por el presenter.
-
 4. Restaura el modo `.content` al finalizar la prueba.
 
 ### Prueba del estado de error y reintento
 
-1. Cambia temporalmente la dependencia del contenedor:
-
+1. Cambia temporalmente la dependencia del contenedor (`AppContainer` o `AppDependencyContainer`):
+   
    ```swift
    init(
        taskRepository: any TaskRepositoryProtocol =
@@ -1329,55 +1292,50 @@ Confirma que el archivo `README.md` documenta el flujo y que el proyecto compila
        self.taskRepository = taskRepository
    }
    ```
-
 2. Ejecuta la aplicación.
-
 3. Verifica:
+   
    - Se muestra el estado de error.
    - Se muestra el botón **Reintentar**.
    - Al pulsarlo se vuelve a mostrar el indicador de carga y posteriormente el error, porque el repositorio continúa en modo `.failure`.
-
 4. Restaura `.content` antes de confirmar el código final.
 
 ### Validación de responsabilidades
 
 Usa esta lista de control antes de entregar:
 
-| Comprobación | Resultado esperado |
-|---|---|
-| La View carga tareas | No; solo notifica `viewDidLoad()` al Presenter |
-| El Presenter consulta el repositorio directamente | No; usa el Interactor |
-| El Interactor importa UIKit | No |
-| El Presenter crea `TaskDetailViewController` | No |
-| La View usa `pushViewController` | No |
-| El Router usa un delegate débil | Sí |
-| El Coordinator posee el `UINavigationController` | Sí |
-| El Builder construye el grafo de dependencias | Sí |
-| `TaskListStateView` conoce VIPER | No; solo representa estados visuales |
+| Comprobación                                      | Resultado esperado                             |
+|---------------------------------------------------|------------------------------------------------|
+| La View carga tareas                              | No; solo notifica `viewDidLoad()` al Presenter |
+| El Presenter consulta el repositorio directamente | No; usa el Interactor                          |
+| El Interactor importa UIKit                       | No                                             |
+| El Presenter crea `TaskDetailViewController`      | No                                             |
+| La View usa `pushViewController`                  | No                                             |
+| El Router usa un delegate débil                   | Sí                                             |
+| El Coordinator posee el `UINavigationController`  | Sí                                             |
+| El Builder construye el grafo de dependencias     | Sí                                             |
+| `TaskListStateView` conoce VIPER                  | No; solo representa estados visuales           |
 
 ### Confirmación final en Git
 
 1. Revisa los archivos modificados:
-
+   
    ```bash
    git status
    git diff --check
    ```
-
 2. Añade los cambios:
-
+   
    ```bash
    git add .
    ```
-
 3. Crea el commit final con el mensaje definido:
-
+   
    ```bash
    git commit -m "feat: refactor task flow with VIPER and coordinators"
    ```
-
 4. Comprueba el historial:
-
+   
    ```bash
    git log --oneline -1
    ```
@@ -1401,21 +1359,18 @@ El runtime iOS 18.5 no está instalado, el simulador se llama de forma diferente
 **Solución:**
 
 1. Lista los dispositivos disponibles:
-
+   
    ```bash
    xcrun simctl list devices available
    ```
-
 2. Instala el runtime iOS 18.5 desde **Xcode > Settings > Components** si no aparece.
-
 3. Verifica la ruta de Xcode activa:
-
+   
    ```bash
    xcode-select -p
    ```
-
 4. Si el nombre o versión no coincide, usa temporalmente un destino existente y documenta la diferencia. Para la entrega final, vuelve a usar:
-
+   
    ```bash
    -destination 'platform=iOS Simulator,name=iPhone 16,OS=18.5'
    ```
@@ -1433,65 +1388,58 @@ El `TaskListRouter` no recibió correctamente el `TaskFlowCoordinator` como `rou
 **Solución:**
 
 1. Verifica que el Builder recibe `routingDelegate: self` desde `TaskFlowCoordinator`:
-
+   
    ```swift
    let taskListViewController = TaskListModuleBuilder.build(
        repository: container.taskRepository,
        routingDelegate: self
    )
    ```
-
 2. Confirma que `AppCoordinator` conserva el flujo:
-
+   
    ```swift
    private var taskFlowCoordinator: TaskFlowCoordinator?
    ```
-
 3. Comprueba que `start()` asigna la referencia antes de mostrar la lista:
-
+   
    ```swift
    self.taskFlowCoordinator = taskFlowCoordinator
    ```
-
 4. Añade temporalmente un breakpoint en `showTaskDetail(task:)` para comprobar que el router invoca al coordinator.
 
 ## Limpieza
 
 1. Restaura el repositorio al modo de contenido:
-
+   
    ```swift
    InMemoryTaskRepository(mode: .content)
    ```
-
+   
    También puedes simplificarlo usando el valor por defecto:
-
+   
    ```swift
    InMemoryTaskRepository()
    ```
-
 2. Detén la aplicación en Simulator.
-
 3. Conserva los archivos fuente, el diagrama de `README.md` y el commit final; forman parte de la entrega.
-
 4. Si generaste archivos temporales fuera del proyecto, elimínalos:
-
+   
    ```bash
    rm -rf /tmp/CampusExplorerLab
    ```
-
 5. Comprueba el estado final:
-
+   
    ```bash
    git status
    ```
-
+   
    El resultado esperado es un árbol de trabajo limpio después del commit.
 
 ## Resumen
 
 En esta práctica has transformado una funcionalidad de tareas en una arquitectura VIPER con contratos explícitos. `TaskListPresenter` coordina la presentación, `TaskListInteractor` ejecuta el caso de uso sobre una abstracción de repositorio y `TaskListRouter` solicita navegación al `TaskFlowCoordinator`.
 
-También has creado `TaskListStateView` para reutilizar la interfaz de carga, vacío y error, y has centralizado la composición en `AppContainer` y `AppCoordinator`. Como resultado, la lista y el detalle son módulos construibles, navegables y con responsabilidades separadas, preparados para evolucionar hacia pruebas unitarias, snapshots y automatización continua.
+También has creado `TaskListStateView` para reutilizar la interfaz de carga, vacío y error, y has centralizado la composición en el contenedor de dependencias y en `AppCoordinator`. Como resultado, la lista y el detalle son módulos construibles, navegables y con responsabilidades separadas, preparados para evolucionar hacia pruebas unitarias, snapshots y automatización continua.
 
 ### Recursos opcionales
 
@@ -1499,3 +1447,309 @@ También has creado `TaskListStateView` para reutilizar la interfaz de carga, va
 - [Apple Developer Documentation: Concurrency](https://developer.apple.com/documentation/swift/concurrency)
 - [Swift Package Manager](https://www.swift.org/documentation/package-manager/)
 - [WWDC: Modern Swift Concurrency](https://developer.apple.com/videos/)
+
+---
+
+## Anexo. Correcciones y continuidad con el curso
+
+### A.1 Resumen de las correcciones de esta versión
+
+| Corrección | Motivo | Dónde |
+|---|---|---|
+| La entidad se llama `CampusTask` en lugar de `Task` | `Task` choca con el `Task` de Swift Concurrency: `Task.sleep`, `Task<Void, Never>` y `Task { … }` dejaban de compilar | Pasos 2 a 8 |
+| `TaskListStateView.State` es `Equatable` | `state == .hidden` no compila con valores asociados si el enum no es `Equatable` | Paso 3 |
+| Protocolos de View, Presenter y Router, Builders y Coordinators marcados `@MainActor` | En Swift 6 un Presenter `@MainActor` no puede cumplir un protocolo sin aislar, y los controladores solo se crean en el hilo principal | Pasos 4 a 8 |
+| `TaskListInteractor` y su protocolo son `Sendable` | El Interactor se usa desde una tarea del Presenter; así no hay avisos de concurrencia | Paso 5 |
+| El detalle no tiene Router | El Router se creaba en el Builder pero nadie lo conservaba ni lo usaba | Paso 7 |
+| Integración con el proyecto existente | Los laboratorios 1 a 5 ya tienen `AppDependencyContainer` y `AppCoordinator` | Paso 8 y A.2 |
+| Nota sobre grupos y paquetes | El objetivo habla de modularización, pero la práctica usa grupos | Paso 1 y A.3 |
+| Pruebas opcionales | Continuidad con el capítulo 5 | A.4 |
+
+### A.2 Integrar el flujo de tareas en el proyecto existente
+
+Si tu proyecto viene de los laboratorios 1 a 5, no crees `AppContainer` ni un segundo `AppCoordinator`. Haz estos tres cambios.
+
+**1. Añade el repositorio y la fábrica del flujo a `AppDependencyContainer`:**
+
+```swift
+import UIKit
+
+@MainActor
+final class AppDependencyContainer {
+    // … dependencias de los laboratorios 1 a 5
+
+    lazy var taskRepository: any TaskRepositoryProtocol =
+        InMemoryTaskRepository()
+
+    func makeTaskFlowCoordinator(
+        navigationController: UINavigationController
+    ) -> TaskFlowCoordinator {
+        TaskFlowCoordinator(
+            navigationController: navigationController,
+            container: self
+        )
+    }
+}
+```
+
+**2. En `TaskFlowCoordinator`, cambia el tipo del contenedor:**
+
+```swift
+private let container: AppDependencyContainer
+
+init(
+    navigationController: UINavigationController,
+    container: AppDependencyContainer
+) {
+    self.navigationController = navigationController
+    self.container = container
+}
+```
+
+El resto de `TaskFlowCoordinator` (paso 8) no cambia.
+
+**3. En `AppCoordinator`, muestra lugares y tareas en dos pestañas y conserva los dos coordinadores hijos:**
+
+```swift
+import UIKit
+
+@MainActor
+final class AppCoordinator {
+    private let window: UIWindow
+    private let dependencyContainer: AppDependencyContainer
+    private let placesNavigationController = UINavigationController()
+    private let tasksNavigationController = UINavigationController()
+    private var placesCoordinator: PlacesCoordinator?
+    private var taskFlowCoordinator: TaskFlowCoordinator?
+
+    init(window: UIWindow, dependencyContainer: AppDependencyContainer) {
+        self.window = window
+        self.dependencyContainer = dependencyContainer
+    }
+
+    func start() {
+        let places = PlacesCoordinator(
+            navigationController: placesNavigationController,
+            dependencyContainer: dependencyContainer
+        )
+        placesCoordinator = places
+        places.start()
+
+        let tasks = dependencyContainer.makeTaskFlowCoordinator(
+            navigationController: tasksNavigationController
+        )
+        taskFlowCoordinator = tasks
+        tasks.start()
+
+        placesNavigationController.tabBarItem = UITabBarItem(
+            title: "Lugares",
+            image: UIImage(systemName: "map"),
+            tag: 0
+        )
+        tasksNavigationController.tabBarItem = UITabBarItem(
+            title: "Tareas",
+            image: UIImage(systemName: "checklist"),
+            tag: 1
+        )
+
+        let tabBarController = UITabBarController()
+        tabBarController.viewControllers = [
+            placesNavigationController,
+            tasksNavigationController
+        ]
+
+        window.rootViewController = tabBarController
+        window.makeKeyAndVisible()
+    }
+}
+```
+
+Notas:
+
+- Ajusta el inicializador de `PlacesCoordinator` al de tu proyecto; aquí se usa el del laboratorio 1.
+- Cada flujo tiene su propio `UINavigationController`. Por eso `TaskFlowCoordinator.start()` puede usar `setViewControllers` sin borrar la pila de lugares.
+- `AppCoordinator` conserva `taskFlowCoordinator` con una referencia fuerte. Sin ella, el coordinador se libera y la selección no abre el detalle (problema 2).
+- `SceneDelegate` sigue creando el `AppCoordinator` como en el laboratorio 1.
+
+### A.3 Siguiente paso opcional: extraer el módulo a un paquete
+
+Con grupos, la separación es una convención. Con un paquete SPM, el compilador la hace cumplir: solo se ve lo que es `public`.
+
+| | Grupos (esta práctica) | Paquete `Packages/TaskFeature` |
+|---|---|---|
+| Frontera | Convención de carpetas | El compilador impide usar lo que no es `public` |
+| Qué es público | Todo es `internal` y visible | Solo `CampusTask`, `TaskRepositoryProtocol`, `TaskListRoutingDelegate` y los Builders |
+| Compilación | Con la app | Por separado, con sus propias pruebas |
+
+Pasos generales:
+
+1. Crea `Packages/TaskFeature` con un `Package.swift` como el de los paquetes del laboratorio 1 (`swift-tools-version: 6.1`, `.iOS(.v18)`).
+2. Mueve `Core/Entities`, `Core/Repositories` y `Features/TaskList`/`TaskDetail` a `Sources/TaskFeature`.
+3. Marca como `public` solo la entidad, el protocolo del repositorio, el protocolo de navegación y los dos Builders.
+4. Agrega el paquete al proyecto y `import TaskFeature` en `AppDependencyContainer` y `TaskFlowCoordinator`.
+
+`CampusTask` también podría vivir en `CampusDomain` y `TaskListStateView` en `CampusDesignSystem`, siguiendo la estructura del laboratorio 1.
+
+### A.4 Paso opcional: pruebas de los componentes
+
+Agrega estos archivos al target `CampusExplorerTests` del laboratorio 5. Usan Swift Testing y no dependen de UIKit, red ni temporizadores.
+
+`CampusExplorerTests/TaskList/TaskListTestDoubles.swift`:
+
+```swift
+@testable import CampusExplorer
+import Foundation
+
+struct TaskRepositoryStub: TaskRepositoryProtocol {
+    let result: Result<[CampusTask], Error>
+
+    func fetchTasks() async throws -> [CampusTask] {
+        try result.get()
+    }
+}
+
+@MainActor
+final class TaskListViewSpy: TaskListViewProtocol {
+    private(set) var events: [String] = []
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func showLoading() { events.append("loading") }
+
+    func showTasks(_ items: [TaskListItemViewModel]) {
+        events.append("tasks:\(items.count)")
+        finish()
+    }
+
+    func showEmpty(message: String) {
+        events.append("empty")
+        finish()
+    }
+
+    func showError(message: String) {
+        events.append("error")
+        finish()
+    }
+
+    func waitForLoad() async {
+        guard events.count < 2 else { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    private func finish() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+@MainActor
+final class TaskListRoutingDelegateSpy: TaskListRoutingDelegate {
+    private(set) var shownTask: CampusTask?
+
+    func showTaskDetail(task: CampusTask) {
+        shownTask = task
+    }
+}
+```
+
+`CampusExplorerTests/TaskList/TaskListModuleTests.swift`:
+
+```swift
+@testable import CampusExplorer
+import Foundation
+import Testing
+
+@MainActor
+struct TaskListModuleTests {
+    private let sample = CampusTask(
+        title: "Revisar arquitectura VIPER",
+        detail: "Separar responsabilidades",
+        status: .inProgress
+    )
+
+    @Test func interactorDevuelveLasTareasDelRepositorio() async throws {
+        let interactor = TaskListInteractor(
+            repository: TaskRepositoryStub(result: .success([sample]))
+        )
+
+        let tasks = try await interactor.loadTasks()
+
+        #expect(tasks == [sample])
+    }
+
+    @Test func presenterMuestraCargaYDespuesLasTareas() async {
+        let view = TaskListViewSpy()
+        let presenter = makePresenter(view: view, result: .success([sample]))
+
+        presenter.viewDidLoad()
+        await view.waitForLoad()
+
+        #expect(view.events == ["loading", "tasks:1"])
+    }
+
+    @Test func presenterMuestraVacioSinTareas() async {
+        let view = TaskListViewSpy()
+        let presenter = makePresenter(view: view, result: .success([]))
+
+        presenter.viewDidLoad()
+        await view.waitForLoad()
+
+        #expect(view.events == ["loading", "empty"])
+    }
+
+    @Test func presenterPideElDetalleAlCoordinator() async {
+        let view = TaskListViewSpy()
+        let routingDelegate = TaskListRoutingDelegateSpy()
+        let presenter = TaskListPresenter(
+            view: view,
+            interactor: TaskListInteractor(
+                repository: TaskRepositoryStub(result: .success([sample]))
+            ),
+            router: TaskListRouter(delegate: routingDelegate)
+        )
+
+        presenter.viewDidLoad()
+        await view.waitForLoad()
+        presenter.didSelectTask(at: 0)
+
+        #expect(routingDelegate.shownTask == sample)
+    }
+
+    private func makePresenter(
+        view: TaskListViewSpy,
+        result: Result<[CampusTask], Error>
+    ) -> TaskListPresenter {
+        TaskListPresenter(
+            view: view,
+            interactor: TaskListInteractor(
+                repository: TaskRepositoryStub(result: result)
+            ),
+            router: TaskListRouter(delegate: TaskListRoutingDelegateSpy())
+        )
+    }
+}
+```
+
+Notas:
+
+- La View se declara como constante local en cada prueba porque el Presenter la guarda con `weak`. Si no, se liberaría antes de recibir el resultado.
+- En `makePresenter`, el `TaskListRoutingDelegateSpy` se libera al terminar la función porque el Router lo guarda con `weak`. Es correcto: esas pruebas no navegan. La prueba de navegación conserva su propio espía.
+- Ejecuta las pruebas con:
+
+  ```bash
+  xcodebuild test \
+    -project CampusExplorer.xcodeproj \
+    -scheme CampusExplorer \
+    -destination 'platform=iOS Simulator,name=iPhone 16,OS=18.5' \
+    -only-testing:CampusExplorerTests/TaskListModuleTests
+  ```
+
+### A.5 Verificación antes de publicar
+
+| Verificar | Cómo |
+|---|---|
+| No queda ningún uso de `Task` como entidad | Buscar `: Task` y `[Task]` en el proyecto; solo deben aparecer `CampusTask` |
+| El proyecto compila en modo Swift 6 sin errores de aislamiento | `xcodebuild … clean build` del paso 9 |
+| El flujo lista → detalle → lista funciona | Prueba manual del flujo principal |
+| Los estados vacío y error se ven con reintento | Cambiar el modo de `InMemoryTaskRepository` |
+| Sin ciclos de retención | Memory Graph Debugger tras entrar y salir del detalle varias veces |
+| Las pruebas de A.4 pasan | `** TEST SUCCEEDED **` |

@@ -226,6 +226,7 @@ Ejecuta la aplicación en el simulador. Debes poder abrir la pantalla de lugares
 4. Crea el archivo `Packages/CampusLocationKit/Sources/CampusLocationKit/LocationManaging.swift`:
 
    ```swift
+   import CoreLocation
    import Foundation
 
    public enum LocationAuthorizationStatus: Sendable, Equatable {
@@ -270,12 +271,7 @@ Ejecuta la aplicación en el simulador. Debes poder abrir la pantalla de lugares
    }
    ```
 
-5. Observa que `CLLocationDistance` pertenece a Core Location. Añade la importación correspondiente al inicio del archivo anterior:
-
-   ```swift
-   import CoreLocation
-   import Foundation
-   ```
+5. Observa que el archivo importa `CoreLocation`: `CLLocationDistance` pertenece a Core Location. Es la única dependencia de Apple que expone el contrato; `CLLocationManager` queda oculto en la implementación.
 
 6. Crea el archivo `Packages/CampusLocationKit/Sources/CampusLocationKit/LocationManager.swift`:
 
@@ -349,7 +345,7 @@ Ejecuta la aplicación en el simulador. Debes poder abrir la pantalla de lugares
        }
    }
 
-   extension LocationManager: CLLocationManagerDelegate {
+   extension LocationManager: @preconcurrency CLLocationManagerDelegate {
        public func locationManagerDidChangeAuthorization(
            _ manager: CLLocationManager
        ) {
@@ -394,11 +390,13 @@ Ejecuta la aplicación en el simulador. Debes poder abrir la pantalla de lugares
    }
    ```
 
-7. Ejecuta las pruebas del paquete, aunque todavía no existan pruebas funcionales:
+   > **Swift 6:** `LocationManager` está aislado en `@MainActor`, pero `CLLocationManagerDelegate` es un protocolo de Objective-C sin aislamiento. `@preconcurrency` en la conformidad permite cumplirlo y añade una comprobación en tiempo de ejecución de que los métodos llegan al hilo principal. Es seguro porque `CLLocationManager` entrega sus eventos en el hilo donde se creó, que aquí es el principal.
+
+7. Compila el paquete. Swift Package Manager exige que la carpeta del target de pruebas contenga al menos un archivo, así que `swift test` se ejecuta al terminar el paso 3:
 
    ```bash
    cd ~/Developer/CampusExplorer/Packages/CampusLocationKit
-   swift test
+   swift build --target CampusLocationKit
    ```
 
 **Resultado esperado:**
@@ -413,8 +411,9 @@ El comando debe finalizar con un resultado equivalente a:
 
 ```text
 Build complete!
-Test Suite 'All tests' passed
 ```
+
+Si aparece `Source files for target CampusLocationKitTests should be located under...`, crea primero el archivo de pruebas del paso 3 y vuelve a compilar.
 
 ---
 
@@ -431,6 +430,7 @@ Test Suite 'All tests' passed
    import XCTest
    @testable import CampusLocationKit
 
+   @MainActor
    final class LocationCoordinateTests: XCTestCase {
        func testDistanceBetweenEqualCoordinatesIsZero() {
            let manager = LocationManager()
@@ -775,21 +775,25 @@ La compilación debe finalizar con:
 
 4. Adapta los lugares provenientes del repositorio existente. Realiza esta conversión en la capa de presentación o en el `PlacesCoordinator`, no dentro de `CampusLocationKit`.
 
-   Ejemplo; ajusta los nombres de propiedades a tu modelo real de la práctica `03-00-01`:
+   La práctica `03-00-01` dejó `CampusPlace` (con `latitude` y `longitude`) y los grupos de `CampusExplorerViewModel.groups`. La conversión es:
 
    ```swift
-   let mapPlaces = places.map { place in
-       CampusMapPlace(
-           id: place.id.uuidString,
-           name: place.name,
-           subtitle: place.category,
-           coordinate: LocationCoordinate(
-               latitude: place.latitude,
-               longitude: place.longitude
+   let mapPlaces = groups.flatMap { group in
+       group.places.map { place in
+           CampusMapPlace(
+               id: place.id.uuidString,
+               name: place.name,
+               subtitle: group.category.name,
+               coordinate: LocationCoordinate(
+                   latitude: place.latitude,
+                   longitude: place.longitude
+               )
            )
-       )
+       }
    }
    ```
+
+   La categoría se toma del grupo porque `CampusPlace` solo guarda `categoryID`. En el paso 7 esta conversión queda dentro de `showMap(groups:)`.
 
 5. Si el modelo de dominio guarda coordenadas en otra estructura, usa dicha estructura para construir `LocationCoordinate`. El framework no debe importar `CampusDomain`.
 
@@ -1053,22 +1057,26 @@ Compila desde Xcode. Debe desaparecer cualquier error de tipos relacionado con `
 
 1. Localiza el `PlacesCoordinator` creado en la práctica anterior.
 
-2. Añade una función de navegación para el mapa. Ajusta el tipo `[Place]` al modelo real que devuelve tu repositorio:
+2. Añade una función de navegación para el mapa. Recibe los grupos que ya cargó la pantalla de Exploración de la práctica `03-00-01`:
 
    ```swift
+   import CampusDomain
    import CampusLocationKit
+   import UIKit
 
-   func showMap(places: [Place]) {
-       let mapPlaces = places.map { place in
-           CampusMapPlace(
-               id: place.id.uuidString,
-               name: place.name,
-               subtitle: place.category,
-               coordinate: LocationCoordinate(
-                   latitude: place.latitude,
-                   longitude: place.longitude
+   func showMap(groups: [CampusPlaceGroup]) {
+       let mapPlaces = groups.flatMap { group in
+           group.places.map { place in
+               CampusMapPlace(
+                   id: place.id.uuidString,
+                   name: place.name,
+                   subtitle: group.category.name,
+                   coordinate: LocationCoordinate(
+                       latitude: place.latitude,
+                       longitude: place.longitude
+                   )
                )
-           )
+           }
        }
 
        let locationManager: any LocationManaging = LocationManager()
@@ -1089,31 +1097,30 @@ Compila desde Xcode. Debe desaparecer cualquier error de tipos relacionado con `
    }
    ```
 
-3. Desde la pantalla de lista de lugares, agrega una acción de navegación. Puede ser un botón de barra de navegación llamado **Mapa**.
-
-   Ejemplo orientativo en un `UIViewController`:
+3. Agrega el botón **Mapa** a la pantalla de Exploración desde el coordinator. Así el View Controller no conoce el mapa, el `LocationManager` ni el coordinator. En `showExplorer()` (Anexo A.3 de la práctica `03-00-01`):
 
    ```swift
-   navigationItem.rightBarButtonItem = UIBarButtonItem(
-       title: "Mapa",
-       style: .plain,
-       target: self,
-       action: #selector(didTapMap)
-   )
-   ```
+   func showExplorer() {
+       let viewModel = dependencyContainer.makeCampusExplorerViewModel()
+       let viewController = CampusExplorerViewController(viewModel: viewModel)
 
-4. En la acción del botón, usa el coordinator existente. El View Controller no debe construir directamente el mapa ni el `LocationManager`:
+       viewController.navigationItem.rightBarButtonItem = UIBarButtonItem(
+           title: "Mapa",
+           primaryAction: UIAction { [weak self, weak viewModel] _ in
+               guard let self, let viewModel else { return }
+               self.showMap(groups: viewModel.groups)
+           }
+       )
 
-   ```swift
-   @objc
-   private func didTapMap() {
-       coordinator?.showMap(places: viewModel.places)
+       navigationController.pushViewController(viewController, animated: true)
    }
    ```
 
+4. Las capturas son `weak`: el coordinator y el ViewModel ya tienen dueño, y el botón no debe retenerlos. Si se pulsa **Mapa** antes de que termine la carga, `groups` está vacío y el mapa se abre sin marcadores; espera a que aparezcan las secciones.
+
 5. Ejecuta la aplicación en el simulador `iPhone 16`.
 
-6. Abre la lista de lugares y pulsa **Mapa**.
+6. Abre **Explorar**, espera a que se carguen las secciones y pulsa **Mapa**.
 
 7. Confirma que se muestra la región predefinida y las anotaciones del campus.
 
@@ -1320,3 +1327,153 @@ La aplicación principal conserva la responsabilidad de presentación, adaptaci�
 - [Apple Developer Documentation: Core Location](https://developer.apple.com/documentation/corelocation)
 - [Apple Developer Documentation: Requesting authorization for location services](https://developer.apple.com/documentation/corelocation/requesting-authorization-for-location-services)
 - [Apple Developer Documentation: MKMapView](https://developer.apple.com/documentation/mapkit/mkmapview)
+
+---
+
+## Anexo. Correcciones y continuidad con el curso
+
+### A.1 Resumen de las correcciones de esta versión
+
+| Corrección | Motivo | Dónde |
+|---|---|---|
+| `import CoreLocation` dentro del código de `LocationManaging.swift` | El bloque original solo importaba `Foundation` y no compilaba sin la instrucción adicional | Paso 2 |
+| Conformidad `@preconcurrency CLLocationManagerDelegate` | Un `LocationManager` aislado en `@MainActor` no puede cumplir un protocolo sin aislamiento en Swift 6 | Paso 2 |
+| Compilación del paquete antes de crear las pruebas | `swift test` con la carpeta de pruebas vacía falla | Paso 2 |
+| `LocationCoordinateTests` en `@MainActor` | Las pruebas crean un `LocationManager`, que solo puede inicializarse en el actor principal | Paso 3 |
+| `showMap(groups:)` a partir de `CampusPlace` | El código usaba un `Place` con `UUID`, `latitude` y `longitude` que no existe en ninguna práctica anterior | Pasos 5 y 7 |
+| Botón **Mapa** creado por el coordinator | El ejemplo llamaba a `coordinator?.showMap(places: viewModel.places)` desde un View Controller que no tiene `coordinator` ni `places` | Paso 7 |
+
+### A.2 De qué modelo sale cada dato del mapa
+
+| Práctica | Modelo de lugar | ¿Sirve para el mapa? |
+|---|---|---|
+| 01-00-01 | `Place` (`summary`, `building`) | No: sin coordenadas |
+| 02-00-01 | `Place` (`address`, `city`, `region`) | No: sin coordenadas |
+| 03-00-01 | `CampusPlace` (`latitude`, `longitude`, `categoryID`) dentro de `CampusPlaceGroup` | **Sí** |
+| Esta práctica | `CampusMapPlace` (modelo de presentación del mapa) | Se construye desde `CampusPlace` |
+
+`CampusLocationKit` no importa `CampusDomain`: la conversión ocurre en la app (`PlacesCoordinator`), y el framework solo conoce `LocationCoordinate`.
+
+### A.3 Simular la ubicación sin tocar el código
+
+Además de **Features > Location > Custom Location…** (paso 7), puedes fijar una ubicación en el esquema para que se aplique en cada ejecución:
+
+1. Crea `CampusExplorer/Resources/Campus.gpx`:
+
+   ```xml
+   <?xml version="1.0"?>
+   <gpx version="1.1" creator="CampusExplorer">
+       <wpt lat="40.4168" lon="-3.7038">
+           <name>Entrada principal del campus</name>
+       </wpt>
+   </gpx>
+   ```
+
+2. Abre **Product > Scheme > Edit Scheme > Run > Options**.
+3. Marca **Allow Location Simulation** y selecciona `Campus` en **Default Location**.
+
+Con varios `wpt` en el archivo, el simulador recorre los puntos en orden; sirve para comprobar que la distancia se actualiza al moverse.
+
+### A.4 Paso opcional: probar el ViewModel del mapa sin Core Location
+
+`PlacesMapViewModel` depende de `LocationManaging`, así que se puede probar con un doble que simula permisos y coordenadas. Crea `CampusExplorerTests/PlacesMapViewModelTests.swift`:
+
+```swift
+@testable import CampusExplorer
+import CampusLocationKit
+import CoreLocation
+import Testing
+
+@MainActor
+final class FakeLocationManager: LocationManaging {
+    weak var delegate: (any CampusLocationManagerDelegate)?
+    var authorizationStatus: LocationAuthorizationStatus = .notDetermined
+    var lastKnownCoordinate: LocationCoordinate?
+    private(set) var didRequestAuthorization = false
+
+    func requestWhenInUseAuthorization() {
+        didRequestAuthorization = true
+    }
+
+    func startUpdatingLocation() {}
+    func stopUpdatingLocation() {}
+
+    func distance(from origin: LocationCoordinate, to destination: LocationCoordinate) -> CLLocationDistance {
+        origin.clLocation.distance(from: destination.clLocation)
+    }
+
+    func simulate(status: LocationAuthorizationStatus) {
+        authorizationStatus = status
+        delegate?.campusLocationManager(self, didChange: status)
+    }
+
+    func simulate(coordinate: LocationCoordinate) {
+        lastKnownCoordinate = coordinate
+        delegate?.campusLocationManager(self, didUpdate: coordinate)
+    }
+}
+
+@MainActor
+struct PlacesMapViewModelTests {
+    private let library = CampusMapPlace(
+        id: "library",
+        name: "Biblioteca Central",
+        subtitle: "Bibliotecas",
+        coordinate: LocationCoordinate(latitude: 40.4170, longitude: -3.7040)
+    )
+
+    @Test func pideElPermisoSoloAlPulsarElBoton() {
+        let manager = FakeLocationManager()
+        let viewModel = PlacesMapViewModel(places: [library], locationManager: manager)
+
+        viewModel.start()
+        #expect(manager.didRequestAuthorization == false)
+
+        viewModel.requestUserLocation()
+        #expect(manager.didRequestAuthorization)
+    }
+
+    @Test func muestraLaDistanciaConUbicacionYLugarSeleccionado() {
+        let manager = FakeLocationManager()
+        let viewModel = PlacesMapViewModel(places: [library], locationManager: manager)
+        var distanceText: String?
+        viewModel.onDistanceChange = { distanceText = $0 }
+
+        manager.simulate(status: .authorizedWhenInUse)
+        manager.simulate(coordinate: LocationCoordinate(latitude: 40.4168, longitude: -3.7038))
+        viewModel.selectPlace(withID: "library")
+
+        #expect(distanceText?.hasPrefix("Distancia aproximada") == true)
+    }
+
+    @Test func conPermisoDenegadoExplicaLaLimitacion() {
+        let manager = FakeLocationManager()
+        let viewModel = PlacesMapViewModel(places: [library], locationManager: manager)
+        var message: String?
+        viewModel.onLocationStateChange = { message = $0 }
+
+        manager.simulate(status: .denied)
+
+        #expect(message?.contains("región predeterminada") == true)
+    }
+}
+```
+
+Estas pruebas no abren el diálogo de permisos ni necesitan el simulador de ubicación.
+
+### A.5 Continuidad con las prácticas siguientes
+
+| Práctica | Qué aprovecha de esta |
+|---|---|
+| 05-00-01 | Implementa `LocationProviding` sobre `LocationManaging` para probar `PlacesViewModel` con Combine |
+| 06-00-01 | Reutiliza el patrón Coordinator + Builder para el módulo VIPER de tareas |
+
+### A.6 Verificación antes de publicar
+
+| Verificar | Cómo |
+|---|---|
+| El paquete compila y sus pruebas pasan | `swift test` en `Packages/CampusLocationKit` tras el paso 3 |
+| No quedan referencias a `showMap(places:)` ni a `place.latitude` sobre `Place` | Buscar `showMap(places` y `[Place]` en el coordinator |
+| El mapa muestra los seis lugares de la Exploración | Abrir **Explorar** y pulsar **Mapa** |
+| Los flujos de permiso funcionan | Tabla de verificación del paso 7 |
+| Las pruebas de A.4 pasan | `** TEST SUCCEEDED **` |

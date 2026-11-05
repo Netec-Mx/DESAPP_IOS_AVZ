@@ -196,6 +196,8 @@ La última línea relevante debe contener:
 
 3. Elimine o deje de usar el arreglo estático de lugares como origen de datos de la pantalla. Puede conservarlo temporalmente para pruebas visuales, pero no debe inyectarse en producción al finalizar la práctica.
 
+   > **Importante:** este cambio de `Place` sustituye `summary` y `building` por `address`, `city` y `region`. El código del laboratorio 1 que usa los campos anteriores (`StaticPlacesService`, la celda de `PlacesListViewController`, `PlaceDetailViewModel` y `PlacesListViewModelTests`) deja de compilar. Actualícelo con el **Anexo A.2** antes de compilar la app.
+
 4. Compruebe que el manifiesto de `CampusDomain` expone el producto de biblioteca esperado. Debe contener un producto similar a este:
 
    ```swift
@@ -328,6 +330,35 @@ La salida debe incluir el producto `CampusDomain` y el target del mismo nombre.
 
    public protocol PlacesSearching {
        func searchPlaces(query: String) -> AnyPublisher<[Place], CampusNetworkError>
+   }
+   ```
+
+6. El manifiesto declara el target de pruebas `CampusNetworkingTests`. Swift Package Manager exige que su carpeta exista y contenga al menos un archivo; si no, `swift build` falla con `Source files for target CampusNetworkingTests should be located under Tests/CampusNetworkingTests`. Cree la carpeta:
+
+   ```bash
+   mkdir -p Packages/CampusNetworking/Tests/CampusNetworkingTests
+   ```
+
+   Y cree `Packages/CampusNetworking/Tests/CampusNetworkingTests/CampusNetworkErrorTests.swift`:
+
+   ```swift
+   import XCTest
+   @testable import CampusNetworking
+
+   final class CampusNetworkErrorTests: XCTestCase {
+       func testTransportErrorShowsConnectionMessage() {
+           XCTAssertEqual(
+               CampusNetworkError.transport("Offline").userMessage,
+               "Compruebe su conexión a Internet e inténtelo de nuevo."
+           )
+       }
+
+       func testTooManyRequestsShowsRateLimitMessage() {
+           XCTAssertEqual(
+               CampusNetworkError.httpStatus(429).userMessage,
+               "Se alcanzó el límite temporal de consultas. Inténtelo más tarde."
+           )
+       }
    }
    ```
 
@@ -675,10 +706,20 @@ Todas deben existir en la cadena de búsqueda.
 3. Cree una factoría para el `ViewModel`:
 
    ```swift
+   import CampusDomain
+   import CampusNetworking
+   import Foundation
+
+   @MainActor
    final class AppDependencyContainer {
        private lazy var placesRepository: any PlacesSearching = {
            OpenBreweryPlacesService()
        }()
+
+       // Fuente estática del laboratorio 1; se conserva para pruebas y modo sin red.
+       func makePlacesRepository() -> any PlacesRepositoryProtocol {
+           PlacesRepository(service: StaticPlacesService())
+       }
 
        func makePlacesViewModel() -> PlacesViewModel {
            PlacesViewModel(repository: placesRepository)
@@ -686,15 +727,26 @@ Todas deben existir en la cadena de búsqueda.
    }
    ```
 
+   Conserve `@MainActor` y `makePlacesRepository()` del laboratorio 1; solo se añaden `placesRepository` y `makePlacesViewModel()`.
+
 4. Actualice el coordinator de lugares para solicitar el `ViewModel` al contenedor:
 
    ```swift
+   func start() {
+       showPlaces()
+   }
+
    func showPlaces() {
        let viewModel = dependencyContainer.makePlacesViewModel()
        let viewController = PlacesViewController(viewModel: viewModel)
-       navigationController.pushViewController(viewController, animated: true)
+       navigationController.setViewControllers(
+           [viewController],
+           animated: false
+       )
    }
    ```
+
+   La búsqueda remota sustituye a la lista estática como pantalla inicial, por eso se usa `setViewControllers` en lugar de `pushViewController`. `PlacesListViewController` y `PlaceDetailViewController` del laboratorio 1 pueden conservarse en el proyecto, pero ya no se muestran.
 
 5. No cree `URLSession`, `OpenBreweryPlacesService` ni URLs dentro de `PlacesViewController`.
 
@@ -740,7 +792,6 @@ No debe recibir una URL ni crear directamente una instancia de `OpenBreweryPlace
        private var cancellables = Set<AnyCancellable>()
        private var places: [Place] = []
 
-       // Conecte estas propiedades con sus vistas reales.
        private let searchBar = UISearchBar()
        private let tableView = UITableView()
        private let activityIndicator = UIActivityIndicatorView(style: .large)
@@ -758,7 +809,46 @@ No debe recibir una URL ni crear directamente una instancia de `OpenBreweryPlace
 
        override func viewDidLoad() {
            super.viewDidLoad()
+           title = "Lugares"
+           view.backgroundColor = .systemBackground
+           configureViews()
            configureBindings()
+       }
+
+       private func configureViews() {
+           searchBar.placeholder = "Buscar lugares"
+           tableView.dataSource = self
+           tableView.register(UITableViewCell.self, forCellReuseIdentifier: "PlaceCell")
+           messageLabel.numberOfLines = 0
+           messageLabel.textAlignment = .center
+           messageLabel.textColor = .secondaryLabel
+           retryButton.setTitle("Reintentar", for: .normal)
+
+           let stateStack = UIStackView(arrangedSubviews: [activityIndicator, messageLabel, retryButton])
+           stateStack.axis = .vertical
+           stateStack.spacing = 12
+           stateStack.alignment = .center
+
+           [searchBar, tableView, stateStack].forEach {
+               $0.translatesAutoresizingMaskIntoConstraints = false
+               view.addSubview($0)
+           }
+
+           NSLayoutConstraint.activate([
+               searchBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+               searchBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+               searchBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+
+               tableView.topAnchor.constraint(equalTo: searchBar.bottomAnchor),
+               tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+               tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+               tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+               stateStack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+               stateStack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+               stateStack.leadingAnchor.constraint(greaterThanOrEqualTo: view.layoutMarginsGuide.leadingAnchor),
+               stateStack.trailingAnchor.constraint(lessThanOrEqualTo: view.layoutMarginsGuide.trailingAnchor)
+           ])
        }
 
        private func configureBindings() {
@@ -829,9 +919,30 @@ No debe recibir una URL ni crear directamente una instancia de `OpenBreweryPlace
            viewModel.searchText = searchText
        }
    }
+
+   extension PlacesViewController: UITableViewDataSource {
+       func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+           places.count
+       }
+
+       func tableView(
+           _ tableView: UITableView,
+           cellForRowAt indexPath: IndexPath
+       ) -> UITableViewCell {
+           let cell = tableView.dequeueReusableCell(withIdentifier: "PlaceCell", for: indexPath)
+           let place = places[indexPath.row]
+
+           var configuration = UIListContentConfiguration.subtitleCell()
+           configuration.text = place.name
+           configuration.secondaryText = place.subtitle
+           cell.contentConfiguration = configuration
+
+           return cell
+       }
+   }
    ```
 
-3. Conserve la implementación existente de `UITableViewDataSource`, pero asegúrese de que utilice la propiedad `places` actualizada por `render(_:)`.
+3. `PlacesViewController` es una pantalla nueva: el código anterior ya incluye la disposición de las vistas (`configureViews()`) y su `UITableViewDataSource`, que usa la propiedad `places` actualizada por `render(_:)`. No reutilice el `UITableViewDataSource` de `PlacesListViewController`, que pertenece a otra clase.
 
 4. Si el laboratorio anterior ya usa una vista de estado reutilizable del paquete `CampusDesignSystem`, utilícela en lugar de crear controles duplicados. La lógica de decisión de estado debe permanecer en el `ViewController`; los componentes visuales reutilizables deben permanecer en `CampusDesignSystem`.
 
@@ -1189,3 +1300,100 @@ El `PlacesViewModel` implementa una tubería reactiva con `debounce`, `removeDup
 - [URLSession.DataTaskPublisher](https://developer.apple.com/documentation/foundation/urlsession/datataskpublisher)
 - [Open Brewery DB API](https://www.openbrewerydb.org/documentation)
 - [Swift Package Manager](https://www.swift.org/documentation/package-manager/)
+
+---
+
+## Anexo. Correcciones y continuidad con el curso
+
+### A.1 Resumen de las correcciones de esta versión
+
+| Corrección | Motivo | Dónde |
+|---|---|---|
+| Aviso y código para actualizar el laboratorio 1 al nuevo `Place` | Al cambiar `summary`/`building` por `address`/`city`/`region`, el código del laboratorio 1 dejaba de compilar | Paso 2 y A.2 |
+| Carpeta y prueba de `CampusNetworkingTests` | El manifiesto declara ese target; sin su carpeta, `swift build` falla | Paso 3 |
+| `AppDependencyContainer` conserva `@MainActor` y `makePlacesRepository()` | La guía reemplazaba el contenedor del laboratorio 1 y perdía ambos | Paso 7 |
+| `PlacesCoordinator` muestra la búsqueda como pantalla inicial | `showPlaces()` hacía `push` sin indicar desde dónde se llamaba | Paso 7 |
+| `PlacesViewController` incluye disposición de vistas y `UITableViewDataSource` | Es una clase nueva; sin esto la pantalla aparecía vacía | Paso 8 |
+
+### A.2 Actualizar el código del laboratorio 1 al nuevo `Place`
+
+**1. `StaticPlacesService`** (`Packages/CampusNetworking/Sources/CampusNetworking/StaticPlacesService.swift`). Se conserva como fuente sin red para pruebas:
+
+```swift
+import CampusDomain
+import Foundation
+
+public struct StaticPlacesService: PlacesServiceProtocol {
+    public init() {}
+
+    public func fetchPlaces() async throws -> [Place] {
+        try await Task.sleep(for: .milliseconds(350))
+
+        return [
+            Place(id: "library", name: "Biblioteca Central", category: "Estudio",
+                  address: "Edificio A", city: "Campus Central", region: ""),
+            Place(id: "innovation-lab", name: "Laboratorio de Innovación", category: "Tecnología",
+                  address: "Edificio C", city: "Campus Central", region: ""),
+            Place(id: "sports-center", name: "Centro Deportivo", category: "Bienestar",
+                  address: "Edificio F", city: "Campus Central", region: ""),
+            Place(id: "cafeteria", name: "Cafetería Norte", category: "Servicios",
+                  address: "Edificio B", city: "Campus Central", region: "")
+        ]
+    }
+}
+```
+
+**2. Celda de `PlacesListViewController`.** Sustituya la línea del subtítulo:
+
+```swift
+configuration.secondaryText = place.subtitle
+```
+
+**3. `PlaceDetailViewModel`.** Conserve el estado y cambie solo la asignación:
+
+```swift
+init(place: Place) {
+    self.state = PlaceDetailViewState(
+        name: place.name,
+        category: place.category,
+        building: place.address,
+        summary: place.subtitle
+    )
+}
+```
+
+**4. `PlacesListViewModelTests`.** Use el nuevo inicializador en las dos apariciones de `Place(...)`:
+
+```swift
+Place(
+    id: "test-library",
+    name: "Biblioteca de Prueba",
+    category: "Estudio",
+    address: "Edificio Test",
+    city: "Campus Central",
+    region: ""
+)
+```
+
+Compile y ejecute las pruebas: `PlacesListViewModelTests` (laboratorio 1) y `PlacesViewModelTests` (esta práctica) deben pasar.
+
+### A.3 Sobre la API pública
+
+Open Brewery DB se usa porque es gratuita, no requiere clave y responde en JSON estable, lo que permite practicar `DataTaskPublisher`, validación HTTP y decodificación con datos reales. Los resultados son cervecerías, no lugares del campus. El contrato `PlacesSearching` aísla esa decisión: sustituir la API por la del campus solo requiere otra implementación del protocolo y un cambio en `AppDependencyContainer`.
+
+### A.4 Continuidad con las prácticas siguientes
+
+| Práctica | Qué cambia respecto a esta |
+|---|---|
+| 3 | Introduce `CampusPlace` (UUID, categoría, coordenadas, imagen) y migra la red de Combine a `async/await` con un puente `firstValue()` |
+| 4 | Muestra los lugares en un mapa con `CampusLocationKit` |
+| 5 | Prueba `PlacesViewModel` con `XCTestExpectation` y snapshots, sobre un contrato con ubicación |
+
+### A.5 Verificación antes de publicar
+
+| Verificar | Cómo |
+|---|---|
+| Los paquetes compilan | `swift build --package-path Packages/CampusNetworking` y `swift test --package-path Packages/CampusNetworking` |
+| No quedan usos de `summary` o `building` en `Place(...)` | Buscar `summary:` y `building:` en el proyecto; solo deben aparecer en `PlaceDetailViewState` y `PlaceDetailViewModel` |
+| La búsqueda es la pantalla inicial | Ejecutar la app y escribir `san diego` |
+| Todas las pruebas pasan | `** TEST SUCCEEDED **` en el paso 9 |
